@@ -1,11 +1,12 @@
+import json
+import dataclasses
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
 from transformers import PreTrainedTokenizer
 
-import json
-import dataclasses
 
-
+@dataclass
 class InputExample:
     """A single example of data.utils
 
@@ -34,6 +35,7 @@ class InputExample:
         return json.dumps(self.to_dict(), indent=2) + "\n"
 
 
+@dataclass(frozen=True)
 class InputFeatures:
     """A single set of features of data to feed into the pretrained models.
 

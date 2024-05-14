@@ -27,16 +27,19 @@ class CommonDataModule:
 
     def prepare_dataset(self, dataset_type: str) -> Dataset:
         if dataset_type == "train":
+            assert self.config.train_file_name is not None, "There's no train dataset."
             dataset = self.processor.get_dataset(
-                self.config.data_dir, self.config.train_file_name, dataset_type
+                self.config.data_dir, self.config.train_file_name
             )
         elif dataset_type == "dev":
+            assert self.config.dev_file_name is not None, "There's no eval dataset."
             dataset = self.processor.get_dataset(
-                self.config.data_dir, self.config.dev_file_name, dataset_type
+                self.config.data_dir, self.config.dev_file_name
             )
         elif dataset_type == "test":
+            assert self.config.test_file_name is not None, "There's no test dataset."
             dataset = self.processor.get_dataset(
-                self.config.data_dir, self.config.test_file_name, dataset_type
+                self.config.data_dir, self.config.test_file_name
             )
         else:
             raise ValueError(f"{dataset_type} do not support. [train|dev|test]")
