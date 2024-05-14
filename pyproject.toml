@@ -9,7 +9,11 @@ readme = "README.md"
 python = "^3.10"
 torch = "2.2.1"
 transformers = "^4.40.1"
+pydantic = "^2.7.1"
 
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.4"
 
 [build-system]
 requires = ["poetry-core"]

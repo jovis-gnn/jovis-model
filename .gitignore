@@ -1,4 +1,5 @@
 .env
 .venv/
+.flake8
 
-notebooks/
+jovis_model/_db/
