@@ -1,19 +1,29 @@
 import os
 import json
-from typing import Any, Dict, List
+from typing import List
 
 import torch
 from torch.utils.data import TensorDataset
-from transformers import PreTrainedTokenizer
+from transformers import AutoTokenizer
 
+from jovis_model.configs.base import BaseConfig
 from jovis_model.datasets.common import DataProcessor
-from jovis_model.datasets.inputs import InputExample, InputFeatures
-from jovis_model.datasets.klue.utils import convert_examples_to_features
+from jovis_model.datasets.klue.utils import (
+    convert_examples_to_features,
+    InputExample,
+    InputFeatures,
+)
 
 
 class YNATProcessor(DataProcessor):
-    def __init__(self, params: Dict[str, Any], tokenizer: PreTrainedTokenizer) -> None:
-        super().__init__(params, tokenizer)
+    def __init__(self, config: BaseConfig) -> None:
+        super().__init__(config)
+        self.config = config
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            config.params.tokenizer_name
+            if config.params.tokenizer_name
+            else config.params.hf_name
+        )
 
     def get_labels(self) -> List[str]:
         return ["정치", "경제", "사회", "생활문화", "세계", "IT과학", "스포츠"]
@@ -34,7 +44,7 @@ class YNATProcessor(DataProcessor):
             examples,
             self.tokenizer,
             label_list=self.get_labels(),
-            max_length=self.hparams.max_seq_length,
+            max_length=self.config.params.max_seq_length,
             task_mode="classification",
         )
 
