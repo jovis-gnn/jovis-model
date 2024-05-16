@@ -3,9 +3,7 @@ import importlib
 from torch.utils.data import DataLoader, Dataset
 
 from jovis_model.configs.base import BaseConfig
-
-
-MODULES = {"klue_ynat": "jovis_model.datasets.klue.ynat.YNATProcessor"}
+from jovis_model.utils.module import DataProcessorModules
 
 
 class DataProcessor:
@@ -20,7 +18,7 @@ class CommonDataModule:
     def __init__(self, config: BaseConfig):
         super().__init__()
         self.config = config
-        module_name = MODULES[f"{self.config.pkg}_{self.config.task}"]
+        module_name = DataProcessorModules[f"{self.config.pkg}_{self.config.task}"]
         module, class_ = module_name.rsplit(".", 1)
         module = importlib.import_module(module)
         self.processor = getattr(module, class_)(self.config)
