@@ -3,15 +3,15 @@ from typing import Any, Dict, List
 import torch
 from transformers import AutoModelForSequenceClassification
 
-from jovis_model.models import BaseTransformer
+from jovis_model.models.klue.base import BaseTransformer
+from jovis_model.configs.base import BaseConfig
 
 
 class SCTransformer(BaseTransformer):
-    def __init__(self, params: Dict[str, Any], metrics: Dict[str, Any]):
+    def __init__(self, config: BaseConfig, metrics: Dict[str, Any]):
         super().__init__(
-            params,
-            num_labels=params.num_labels,
-            mode=self.mode,
+            config,
+            num_labels=config.params.num_labels,
             model_type=AutoModelForSequenceClassification,
             metrics=metrics,
         )
@@ -27,7 +27,7 @@ class SCTransformer(BaseTransformer):
         outputs = self.forward(**inputs)
         loss = outputs[0]
 
-        return loss
+        return {"loss": loss}
 
     def validation_step(
         self, batch: List[torch.Tensor], batch_idx: int, data_type: str = "valid"
@@ -44,7 +44,7 @@ class SCTransformer(BaseTransformer):
     def validation_epoch_end(
         self, outputs: List[Dict[str, torch.Tensor]], data_type: str = "valid"
     ):
-        labels = torch.cat([output["label"] for output in outputs], dim=0)
+        labels = torch.cat([output["labels"] for output in outputs], dim=0)
         preds = self._convert_outputs_to_preds(outputs)
 
         return self.metric(preds, labels)

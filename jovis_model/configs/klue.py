@@ -1,8 +1,8 @@
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, Extra
 
 
-class KLUEConfig(BaseModel):
+class KLUEConfig(BaseModel, extra=Extra.allow):
     hf_name: str = Field(
         default="klue/roberta-base", description="hugging face model name"
     )
@@ -29,6 +29,7 @@ class KLUEConfig(BaseModel):
     dropout: Optional[float] = Field(default=None)
     attention_dropout: Optional[float] = Field(default=None)
     learning_rate: float = Field(default=5e-5)
+    lr_scheduler: str = Field(default="linear")
     weight_decay: float = Field(default=0.0)
     adam_epsilon: float = Field(default=1e-8)
     warmup_steps: int = Field(default=None)
