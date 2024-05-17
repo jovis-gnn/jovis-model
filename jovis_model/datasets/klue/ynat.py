@@ -6,8 +6,8 @@ import torch
 from torch.utils.data import TensorDataset
 from transformers import AutoTokenizer
 
-from jovis_model.configs.base import BaseConfig
-from jovis_model.datasets.common import DataProcessor
+from jovis_model.config import Config
+from jovis_model.data import DataProcessor
 from jovis_model.datasets.klue.utils import (
     convert_examples_to_features,
     InputExample,
@@ -16,13 +16,19 @@ from jovis_model.datasets.klue.utils import (
 
 
 class YNATProcessor(DataProcessor):
-    def __init__(self, config: BaseConfig) -> None:
+    def __init__(self, config: Config) -> None:
         super().__init__(config)
         self.config = config
+        cache_dir = (
+            self.config.params.cache_dir if self.config.params.cache_dir else None
+        )
         self.tokenizer = AutoTokenizer.from_pretrained(
-            config.params.tokenizer_name
-            if config.params.tokenizer_name
-            else config.params.hf_name
+            (
+                config.params.tokenizer_name
+                if config.params.tokenizer_name
+                else config.params.hf_name
+            ),
+            cache_dir=cache_dir,
         )
 
     def get_labels(self) -> List[str]:

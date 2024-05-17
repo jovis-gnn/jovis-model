@@ -2,20 +2,20 @@ import importlib
 
 from torch.utils.data import DataLoader, Dataset
 
-from jovis_model.configs.base import BaseConfig
+from jovis_model.config import Config
 from jovis_model.utils.module import DataProcessorModules
 
 
 class DataProcessor:
-    def __init__(self, config: BaseConfig) -> None:
+    def __init__(self, config: Config) -> None:
         self.config = config
 
     def get_dataset(self, data_dir: str, file_name: str, dataset_type: str) -> Dataset:
         raise NotImplementedError()
 
 
-class CommonDataModule:
-    def __init__(self, config: BaseConfig):
+class DataModule:
+    def __init__(self, config: Config):
         super().__init__()
         self.config = config
         module_name = DataProcessorModules[f"{self.config.pkg}_{self.config.task}"]

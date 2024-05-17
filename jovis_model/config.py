@@ -2,10 +2,10 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-from .klue import KLUEConfig
+from jovis_model.configs.klue import KLUEConfig
 
 
-class BaseConfig(BaseModel):
+class Config(BaseModel):
     pkg: str
     task: str
     data_dir: str

@@ -18,7 +18,7 @@ from transformers.optimization import (
     get_polynomial_decay_schedule_with_warmup,
 )
 
-from jovis_model.configs.base import BaseConfig
+from jovis_model.config import Config
 
 
 class BaseTransformer:
@@ -27,7 +27,7 @@ class BaseTransformer:
 
     def __init__(
         self,
-        config: BaseConfig,
+        config: Config,
         num_labels: Optional[int] = None,
         mode: str = "base",
         config_: Optional[PretrainedConfig] = None,
@@ -146,7 +146,7 @@ class BaseTransformer:
                 "params": [
                     p
                     for n, p in self.model.named_parameters()
-                    if not any(nd in n for nd in no_decay)
+                    if any(nd in n for nd in no_decay)
                 ],
                 "weight_decay": 0.0,
             },
@@ -166,7 +166,7 @@ class BaseTransformer:
             )
         self.opt = optimizer
         scheduler = self.get_lr_scheduler()
-        return [optimizer], [scheduler]
+        return optimizer, scheduler
 
     def training_step(self) -> Dict[str, torch.Tensor]:
         raise NotImplementedError

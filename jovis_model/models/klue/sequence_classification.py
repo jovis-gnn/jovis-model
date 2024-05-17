@@ -4,11 +4,11 @@ import torch
 from transformers import AutoModelForSequenceClassification
 
 from jovis_model.models.klue.base import BaseTransformer
-from jovis_model.configs.base import BaseConfig
+from jovis_model.config import Config
 
 
 class SCTransformer(BaseTransformer):
-    def __init__(self, config: BaseConfig, metrics: Dict[str, Any]):
+    def __init__(self, config: Config, metrics: Dict[str, Any]):
         super().__init__(
             config,
             num_labels=config.params.num_labels,

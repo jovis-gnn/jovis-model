@@ -12,7 +12,13 @@ class KLUEConfig(BaseModel, extra=Extra.allow):
     tokenizer_name: str = Field(
         default="klue/roberta-base", description="hugging face tokenizer name"
     )
-    cache_dir: str = Field(default=None, description="huggingface hub cache directory")
+    cache_dir: str = Field(
+        default="/home/omnious/.cache/huggingface/hub",
+        description="huggingface hub cache directory",
+    )
+    enable_fsdp: bool = Field(default=False)
+    use_fp16: bool = Field(default=True)
+    num_gpus: int = Field(default=1)
     num_workers: int = Field(default=4)
     train_batch_size: int = Field(default=32)
     eval_batch_size: int = Field(default=64)
@@ -35,5 +41,5 @@ class KLUEConfig(BaseModel, extra=Extra.allow):
     warmup_steps: int = Field(default=None)
     warmup_ratio: float = Field(default=None)
     num_train_epochs: int = Field(default=4)
-    adafactor: bool = Field(default=True)
+    adafactor: bool = Field(default=False)
     verbose_step_count: int = Field(default=100)
