@@ -18,6 +18,7 @@ class KLUEConfig(BaseModel, extra=Extra.allow):
     )
     enable_fsdp: bool = Field(default=False)
     use_fp16: bool = Field(default=True)
+    mixed_precision: bool = Field(default=False)
     num_gpus: int = Field(default=1)
     num_workers: int = Field(default=4)
     train_batch_size: int = Field(default=32)

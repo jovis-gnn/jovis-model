@@ -1,21 +1,12 @@
-import math
 from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn as nn
 from transformers import (
-    AdamW,
     AutoConfig,
     AutoTokenizer,
     PretrainedConfig,
     PreTrainedTokenizer,
-)
-from transformers.optimization import (
-    Adafactor,
-    get_cosine_schedule_with_warmup,
-    get_cosine_with_hard_restarts_schedule_with_warmup,
-    get_linear_schedule_with_warmup,
-    get_polynomial_decay_schedule_with_warmup,
 )
 
 from jovis_model.config import Config
@@ -94,79 +85,79 @@ class BaseTransformer:
         else:
             return False
 
-    def total_steps(self) -> Any:
-        num_devices = max(1, self.config.params.num_gpus)
-        effective_batch_size = (
-            self.config.params.train_batch_size
-            * self.config.params.gradient_accumulation_steps
-            * num_devices
-        )
-        return (
-            self.config.params.dataset_size / effective_batch_size
-        ) * self.config.params.num_train_epochs
+    # def total_steps(self) -> Any:
+    #     num_devices = max(1, self.config.params.num_gpus)
+    #     effective_batch_size = (
+    #         self.config.params.train_batch_size
+    #         * self.config.params.gradient_accumulation_steps
+    #         * num_devices
+    #     )
+    #     return (
+    #         self.config.params.dataset_size / effective_batch_size
+    #     ) * self.config.params.num_train_epochs
 
-    def num_warmup_steps(self) -> Any:
-        num_warmup_steps = self.config.params.warmup_steps
-        if num_warmup_steps is None and self.config.params.warmup_ratio is not None:
-            num_warmup_steps = self.total_steps() * self.config.params.warmup_ratio
-            num_warmup_steps = math.ceil(num_warmup_steps)
+    # def num_warmup_steps(self) -> Any:
+    #     num_warmup_steps = self.config.params.warmup_steps
+    #     if num_warmup_steps is None and self.config.params.warmup_ratio is not None:
+    #         num_warmup_steps = self.total_steps() * self.config.params.warmup_ratio
+    #         num_warmup_steps = math.ceil(num_warmup_steps)
 
-        if num_warmup_steps is None:
-            num_warmup_steps = 0
-        return num_warmup_steps
+    #     if num_warmup_steps is None:
+    #         num_warmup_steps = 0
+    #     return num_warmup_steps
 
-    def get_lr_scheduler(self) -> Any:
-        arg_to_scheduler = {
-            "linear": get_linear_schedule_with_warmup,
-            "cosine": get_cosine_schedule_with_warmup,
-            "cosine_w_restarts": get_cosine_with_hard_restarts_schedule_with_warmup,
-            "polynomial": get_polynomial_decay_schedule_with_warmup,
-        }
-        get_schedule_func = arg_to_scheduler[self.config.params.lr_scheduler]
-        scheduler = get_schedule_func(
-            self.opt,
-            num_warmup_steps=self.num_warmup_steps(),
-            num_training_steps=self.total_steps(),
-        )
-        scheduler = {"scheduler": scheduler, "interval": "step", "frequency": 1}
-        return scheduler
+    # def get_lr_scheduler(self) -> Any:
+    #     arg_to_scheduler = {
+    #         "linear": get_linear_schedule_with_warmup,
+    #         "cosine": get_cosine_schedule_with_warmup,
+    #         "cosine_w_restarts": get_cosine_with_hard_restarts_schedule_with_warmup,
+    #         "polynomial": get_polynomial_decay_schedule_with_warmup,
+    #     }
+    #     get_schedule_func = arg_to_scheduler[self.config.params.lr_scheduler]
+    #     scheduler = get_schedule_func(
+    #         self.opt,
+    #         num_warmup_steps=self.num_warmup_steps(),
+    #         num_training_steps=self.total_steps(),
+    #     )
+    #     scheduler = {"scheduler": scheduler, "interval": "step", "frequency": 1}
+    #     return scheduler
 
-    def configure_optimizers(self):
-        no_decay = ["bias", "LayerNorm.weight"]
-        optimizer_grouped_parameters = [
-            {
-                "params": [
-                    p
-                    for n, p in self.model.named_parameters()
-                    if not any(nd in n for nd in no_decay)
-                ],
-                "weight_decay": self.config.params.weight_decay,
-            },
-            {
-                "params": [
-                    p
-                    for n, p in self.model.named_parameters()
-                    if any(nd in n for nd in no_decay)
-                ],
-                "weight_decay": 0.0,
-            },
-        ]
-        if self.config.params.adafactor:
-            optimizer = Adafactor(
-                optimizer_grouped_parameters,
-                lr=self.config.params.learning_rate,
-                scale_parameter=False,
-                relative_step=False,
-            )
-        else:
-            optimizer = AdamW(
-                optimizer_grouped_parameters,
-                lr=self.config.params.learning_rate,
-                eps=self.config.params.adam_epsilon,
-            )
-        self.opt = optimizer
-        scheduler = self.get_lr_scheduler()
-        return optimizer, scheduler
+    # def configure_optimizers(self):
+    #     no_decay = ["bias", "LayerNorm.weight"]
+    #     optimizer_grouped_parameters = [
+    #         {
+    #             "params": [
+    #                 p
+    #                 for n, p in self.model.named_parameters()
+    #                 if not any(nd in n for nd in no_decay)
+    #             ],
+    #             "weight_decay": self.config.params.weight_decay,
+    #         },
+    #         {
+    #             "params": [
+    #                 p
+    #                 for n, p in self.model.named_parameters()
+    #                 if any(nd in n for nd in no_decay)
+    #             ],
+    #             "weight_decay": 0.0,
+    #         },
+    #     ]
+    #     if self.config.params.adafactor:
+    #         optimizer = Adafactor(
+    #             optimizer_grouped_parameters,
+    #             lr=self.config.params.learning_rate,
+    #             scale_parameter=False,
+    #             relative_step=False,
+    #         )
+    #     else:
+    #         optimizer = AdamW(
+    #             optimizer_grouped_parameters,
+    #             lr=self.config.params.learning_rate,
+    #             eps=self.config.params.adam_epsilon,
+    #         )
+    #     self.opt = optimizer
+    #     scheduler = self.get_lr_scheduler()
+    #     return optimizer, scheduler
 
     def training_step(self) -> Dict[str, torch.Tensor]:
         raise NotImplementedError
