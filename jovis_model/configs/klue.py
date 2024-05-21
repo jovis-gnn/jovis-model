@@ -17,7 +17,7 @@ class KLUEConfig(BaseModel, extra=Extra.allow):
         description="huggingface hub cache directory",
     )
     enable_fsdp: bool = Field(default=False)
-    use_fp16: bool = Field(default=True)
+    use_fp16: bool = Field(default=False)
     mixed_precision: bool = Field(default=False)
     num_gpus: int = Field(default=1)
     num_workers: int = Field(default=4)

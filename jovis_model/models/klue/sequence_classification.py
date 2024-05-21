@@ -3,18 +3,35 @@ from typing import Any, Dict, List
 import torch
 from transformers import AutoModelForSequenceClassification
 
-from jovis_model.models.klue.base import BaseTransformer
+from jovis_model.models.base import BaseModel
 from jovis_model.config import Config
 
 
-class SCTransformer(BaseTransformer):
+class SCTransformer(BaseModel):
+
+    USE_TOKEN_TYPE_MODELS = ["bert", "xlnet", "electra"]
+
     def __init__(self, config: Config, metrics: Dict[str, Any]):
         super().__init__(
             config,
-            num_labels=config.params.num_labels,
+            use_hf_model=True,
             model_type=AutoModelForSequenceClassification,
             metrics=metrics,
+            **{"config_kwargs": {"num_labels": config.params.num_labels}},
         )
+
+        extra_model_params = (
+            "encoder_layerdrop",
+            "decoder_layerdrop",
+            "dropout",
+            "attention_dropout",
+        )
+        for p in extra_model_params:
+            if getattr(self.config.params, p, None):
+                assert hasattr(
+                    self.p_config, p
+                ), f"model config doesn't have a `{p}` attribute"
+                setattr(self.p_config, p, getattr(self.config.params, p))
 
     def forward(self, **inputs: torch.Tensor):
         return self.model(**inputs)

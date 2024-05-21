@@ -1,7 +1,6 @@
 import os
 
 # import pdb
-import importlib
 from tqdm import tqdm
 from contextlib import nullcontext
 
@@ -13,33 +12,83 @@ from torch.distributed.fsdp.sharded_grad_scaler import ShardedGradScaler
 
 from jovis_model.config import Config
 from jovis_model.utils.helper import init_logger
-from jovis_model.utils.module import ModelModules
 from jovis_model.utils.train_utils import get_policies
-from jovis_model.data import DataModule
+from jovis_model.module import DataModule, ModelModule
 
 
 class ModelRunner:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, mode="train"):
         self.logger = init_logger("runner")
         self.config = config
-        self.get_dataloader()
-        self.get_model()
+        self.mode = mode
+        if self.config.params.enable_fsdp:
+            dist.init_process_group("nccl")
+            self.local_rank = int(os.environ["LOCAL_RANK"])
+            self.rank = int(os.environ["RANK"])
+        if torch.distributed.is_initialized():
+            torch.cuda.set_device(self.local_rank)
+            torch.cuda.empty_cache()
 
-    def get_dataloader(self):
-        cdm = DataModule(self.config)
-        train_dataloader = cdm.train_dataloader()
-        self.config.params.num_labels = len(cdm.processor.get_labels())
-        self.config.params.dataset_size = len(train_dataloader)
+        self.dm = self.get_data(mode=mode)
+        self.mm = self.get_model()
 
-        return train_dataloader
+    def get_data(self, mode: str = "train"):
+        dm = DataModule(self.config)
+        if mode in ["train", "eval"]:
+            if self.config.params.enable_fsdp:
+                kwargs = {}
+                dataset = dm.prepare_dataset(mode)
+                kwargs["sampler"] = torch.utils.data.DistributedSampler(
+                    dataset,
+                    rank=dist.get_rank(),
+                    num_replicas=dist.get_world_size(),
+                    shuffle=mode == "train",
+                )
+                kwargs["batch_size"] = getattr(
+                    self.config.params, f"{mode}_batch_size", None
+                )
+                assert (
+                    kwargs["batch_size"] is not None
+                ), f"There's no {mode}_batch_size in params."
+                # kwargs["collate_fn"] = default_data_collator
+                dataloader = torch.utils.data.DataLoader(
+                    dataset,
+                    num_workers=self.config.params.num_workers,
+                    pin_memory=True,
+                    **kwargs,
+                )
+            else:
+                batch_size = getattr(self.config.params, f"{mode}_batch_size", None)
+                assert (
+                    batch_size is not None
+                ), f"There's no {mode}_batch_size in params."
+                dataloader = dm.get_dataloader(
+                    dataset_type=mode, batch_size=batch_size, shuffle=mode == "train"
+                )
+                self.config.params.num_labels = len(dm.processor.get_labels())
+        else:
+            return dm
+        return dataloader
 
     def get_model(self):
-        module_name = ModelModules[f"{self.config.pkg}_{self.config.task}"]
-        module, class_ = module_name.rsplit(".", 1)
-        module = importlib.import_module(module)
-        model = getattr(module, class_)(self.config, {})
+        mm = ModelModule(self.config)
 
-        return model
+        device_id = 0
+        if torch.cuda.is_available():
+            device_id = torch.cuda.current_device()
+        if self.config.params.enable_fsdp:
+            mixed_precision_policy, wrapping_policy = get_policies(config)
+            mm.processor.model = FSDP(
+                mm.processor.model,
+                auto_wrap_policy=wrapping_policy,
+                sharding_strategy=ShardingStrategy.FULL_SHARD,
+                device_id=device_id,
+                limit_all_gathers=True,
+            )
+        else:
+            mm.processor.model.to(f"cuda:{device_id}")
+
+        return mm
 
     def get_optimizers(self, model):
         optimizer = optim.AdamW(
@@ -53,7 +102,7 @@ class ModelRunner:
 
     def train(
         self,
-        model,
+        model_processor,
         train_dataloader,
         optimizer,
         lr_scheduler,
@@ -74,7 +123,7 @@ class ModelRunner:
         train_loss = []
 
         for epoch in range(config.params.num_train_epochs):
-            model.model.train()
+            model_processor.model.train()
             total_loss = 0.0
             total_length = (
                 len(train_dataloader) // config.params.gradient_accumulation_steps
@@ -92,7 +141,7 @@ class ModelRunner:
                     else:
                         batch[idx_] = batch[idx_].to("cuda:0")
                 with autocast():
-                    outputs = model.training_step(batch, step)
+                    outputs = model_processor.training_step(batch, step)
                     loss = outputs["loss"]
                 total_loss += loss.detach().float()
                 if config.params.use_fp16:
@@ -125,49 +174,44 @@ class ModelRunner:
             else:
                 logger.info(f"Epoch {epoch+1}: train_epoch_loss : {train_epoch_loss}")
 
-    def run(self, job="train"):
-        if job == "train":
-            if self.config.params.enable_fsdp:
-                dist.init_process_group("nccl", init_method="env://")
-                local_rank = int(os.environ["LOCAL_RANK"])
-                rank = int(os.environ["RANK"])
-            if torch.distributed.is_initialized():
-                torch.cuda.set_device(local_rank)
+    def inference(self, model_processor, data_module, config):
+        sample_inputs = data_module.processor._convert_features(model_processor)
+        outputs = model_processor.inference(sample_inputs)
 
-            train_dataloader = self.get_dataloader()
-            model = self.get_model()
-            # pdb.set_trace()
-            device_id = 0
-            if torch.cuda.is_available():
-                device_id = torch.cuda.current_device()
-            if self.config.params.enable_fsdp:
-                mixed_precision_policy, wrapping_policy = get_policies(config)
-                model.model = FSDP(
-                    model.model,
-                    auto_wrap_policy=wrapping_policy,
-                    sharding_strategy=ShardingStrategy.FULL_SHARD,
-                    device_id=device_id,
-                    limit_all_gathers=True,
-                )
-            else:
-                model.model.to("cuda")
-            optimizer, lr_scheduler = self.get_optimizers(model.model)
+        return outputs
+
+    def run(self, sample_input=None):
+        outputs = None
+        if self.mode == "train":
+            optimizer, lr_scheduler = self.get_optimizers(self.mm.processor.model)
             self.train(
-                model=model,
-                train_dataloader=train_dataloader,
+                model=self.mm.processor,
+                train_dataloader=self.dm,
                 optimizer=optimizer,
                 lr_scheduler=lr_scheduler,
                 config=self.config,
                 logger=self.logger,
-                local_rank=local_rank if self.config.params.enable_fsdp else None,
-                rank=rank if self.config.params.enable_fsdp else None,
+                local_rank=self.local_rank if self.config.params.enable_fsdp else None,
+                rank=self.rank if self.config.params.enable_fsdp else None,
             )
+        if self.mode == "inference":
+            assert (
+                sample_input is not None
+            ), "please specify target input for inference."
+            outputs = self.inference(
+                model_processor=self.mm.processor,
+                data_module=self.dm,
+                sample_input=sample_input,
+            )
+        return outputs
 
 
 if __name__ == "__main__":
+    import warnings
     from transformers.utils import logging as hf_logging
-    from huggingface_hub import logging as hf_hub_logging
+    from huggingface_hub.utils import logging as hf_hub_logging
 
+    warnings.filterwarnings("ignore")
     hf_logging.set_verbosity_error()
     hf_hub_logging.set_verbosity_error()
 
@@ -175,12 +219,17 @@ if __name__ == "__main__":
     params = {
         "pkg": "klue",
         "task": "ynat",
+        "use_hf_model": True,
         "data_dir": "/home/omnious/workspace/jovis/jovis-model/jovis_model/_db/klue/ynat-v1.1",
         "train_file_name": "ynat-v1.1_train.json",
         "dev_file_name": "ynat-v1.1_dev.json",
         "output_dir": "/home/omnious/workspace/jovis/jovis-model/outputs",
-        "params": {"enable_fsdp": False},
+        "params": {
+            "enable_fsdp": True,
+            "use_fp16": True,
+            "mixed_precision": True,
+        },
     }
     config = Config(**params)
-    runner = ModelRunner(config)
-    runner.run(job="train")
+    runner = ModelRunner(config, mode="train")
+    runner.run()

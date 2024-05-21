@@ -7,7 +7,7 @@ from torch.utils.data import TensorDataset
 from transformers import AutoTokenizer
 
 from jovis_model.config import Config
-from jovis_model.data import DataProcessor
+from jovis_model.datasets.base import BaseDataProcessor
 from jovis_model.datasets.klue.utils import (
     convert_examples_to_features,
     InputExample,
@@ -15,7 +15,7 @@ from jovis_model.datasets.klue.utils import (
 )
 
 
-class YNATProcessor(DataProcessor):
+class YNATProcessor(BaseDataProcessor):
     def __init__(self, config: Config) -> None:
         super().__init__(config)
         self.config = config
