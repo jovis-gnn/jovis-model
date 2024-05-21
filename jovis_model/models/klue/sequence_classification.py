@@ -8,10 +8,7 @@ from jovis_model.config import Config
 
 
 class SCTransformer(BaseModel):
-
-    USE_TOKEN_TYPE_MODELS = ["bert", "xlnet", "electra"]
-
-    def __init__(self, config: Config, metrics: Dict[str, Any]):
+    def __init__(self, config: Config, metrics: Dict[str, Any] = None):
         super().__init__(
             config,
             use_hf_model=True,
@@ -38,9 +35,6 @@ class SCTransformer(BaseModel):
 
     def training_step(self, batch: List[torch.Tensor], batch_idx: int):
         inputs = {"input_ids": batch[0], "attention_mask": batch[1], "labels": batch[3]}
-        if self.is_use_token_type():
-            inputs["token_type_ids"] = batch[2]
-
         outputs = self.forward(**inputs)
         loss = outputs[0]
 

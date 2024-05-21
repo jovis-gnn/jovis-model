@@ -17,7 +17,7 @@ from jovis_model.module import DataModule, ModelModule
 
 
 class ModelRunner:
-    def __init__(self, config: Config, mode="train"):
+    def __init__(self, config: Config, mode: str = "train") -> None:
         self.logger = init_logger("runner")
         self.config = config
         self.mode = mode
@@ -28,65 +28,67 @@ class ModelRunner:
         if torch.distributed.is_initialized():
             torch.cuda.set_device(self.local_rank)
             torch.cuda.empty_cache()
+        self.device_id = 0
+        if torch.cuda.is_available():
+            self.device_id = torch.cuda.current_device()
 
-        self.dm = self.get_data(mode=mode)
-        self.mm = self.get_model()
+        self.dm: DataModule = self.get_data()
+        self.mm: ModelModule = self.get_model()
 
-    def get_data(self, mode: str = "train"):
+    def get_data(self) -> DataModule:
         dm = DataModule(self.config)
-        if mode in ["train", "eval"]:
+        self.config.params.num_labels = len(dm.processor.get_labels())
+        if self.mode in ["train", "eval"]:
             if self.config.params.enable_fsdp:
                 kwargs = {}
-                dataset = dm.prepare_dataset(mode)
+                dataset = dm.prepare_dataset(self.mode)
                 kwargs["sampler"] = torch.utils.data.DistributedSampler(
                     dataset,
                     rank=dist.get_rank(),
                     num_replicas=dist.get_world_size(),
-                    shuffle=mode == "train",
+                    shuffle=self.mode == "train",
                 )
                 kwargs["batch_size"] = getattr(
-                    self.config.params, f"{mode}_batch_size", None
+                    self.config.params, f"{self.mode}_batch_size", None
                 )
                 assert (
                     kwargs["batch_size"] is not None
-                ), f"There's no {mode}_batch_size in params."
+                ), f"There's no {self.mode}_batch_size in params."
                 # kwargs["collate_fn"] = default_data_collator
-                dataloader = torch.utils.data.DataLoader(
+                train_dataloader = torch.utils.data.DataLoader(
                     dataset,
                     num_workers=self.config.params.num_workers,
                     pin_memory=True,
                     **kwargs,
                 )
             else:
-                batch_size = getattr(self.config.params, f"{mode}_batch_size", None)
+                batch_size = getattr(
+                    self.config.params, f"{self.mode}_batch_size", None
+                )
                 assert (
                     batch_size is not None
-                ), f"There's no {mode}_batch_size in params."
-                dataloader = dm.get_dataloader(
-                    dataset_type=mode, batch_size=batch_size, shuffle=mode == "train"
+                ), f"There's no {self.mode}_batch_size in params."
+                train_dataloader = dm.get_dataloader(
+                    dataset_type=self.mode,
+                    batch_size=batch_size,
+                    shuffle=self.mode == "train",
                 )
-                self.config.params.num_labels = len(dm.processor.get_labels())
-        else:
-            return dm
-        return dataloader
+            dm.train_dataloader = train_dataloader
+        return dm
 
-    def get_model(self):
+    def get_model(self) -> ModelModule:
         mm = ModelModule(self.config)
-
-        device_id = 0
-        if torch.cuda.is_available():
-            device_id = torch.cuda.current_device()
         if self.config.params.enable_fsdp:
             mixed_precision_policy, wrapping_policy = get_policies(config)
             mm.processor.model = FSDP(
                 mm.processor.model,
                 auto_wrap_policy=wrapping_policy,
                 sharding_strategy=ShardingStrategy.FULL_SHARD,
-                device_id=device_id,
+                device_id=self.device_id,
                 limit_all_gathers=True,
             )
         else:
-            mm.processor.model.to(f"cuda:{device_id}")
+            mm.processor.model.to(f"cuda:{self.device_id}")
 
         return mm
 
@@ -110,7 +112,7 @@ class ModelRunner:
         logger,
         local_rank=None,
         rank=None,
-    ):
+    ) -> None:
         if config.params.use_fp16 and config.params.enable_fsdp:
             scaler = ShardedGradScaler()
         elif config.params.use_fp16 and not config.params.enable_fsdp:
@@ -174,19 +176,20 @@ class ModelRunner:
             else:
                 logger.info(f"Epoch {epoch+1}: train_epoch_loss : {train_epoch_loss}")
 
-    def inference(self, model_processor, data_module, config):
-        sample_inputs = data_module.processor._convert_features(model_processor)
+    def inference(self, model_processor, data_processor, sample_inputs):
+        sample_inputs = data_processor._convert_features(sample_inputs)
+        sample_inputs = sample_inputs.to(f"cuda:{self.device_id}")
         outputs = model_processor.inference(sample_inputs)
 
         return outputs
 
-    def run(self, sample_input=None):
+    def run(self, sample_inputs=None):
         outputs = None
         if self.mode == "train":
             optimizer, lr_scheduler = self.get_optimizers(self.mm.processor.model)
             self.train(
-                model=self.mm.processor,
-                train_dataloader=self.dm,
+                model_processor=self.mm.processor,
+                train_dataloader=self.dm.train_dataloader,
                 optimizer=optimizer,
                 lr_scheduler=lr_scheduler,
                 config=self.config,
@@ -196,12 +199,12 @@ class ModelRunner:
             )
         if self.mode == "inference":
             assert (
-                sample_input is not None
-            ), "please specify target input for inference."
+                sample_inputs is not None
+            ), "please specify target inputs in inference mode."
             outputs = self.inference(
                 model_processor=self.mm.processor,
-                data_module=self.dm,
-                sample_input=sample_input,
+                data_processor=self.dm.processor,
+                sample_inputs=sample_inputs,
             )
         return outputs
 

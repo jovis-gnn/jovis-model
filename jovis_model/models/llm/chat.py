@@ -20,14 +20,20 @@ class ChatModel(BaseModel):
     def inference(self, sample_inputs: torch.Tensor):
         outputs = self.model.generate(
             input_ids=sample_inputs,
-            max_new_tokens=self.config.max_new_tokens,
+            max_new_tokens=self.config.params.max_new_tokens,
             do_sample=True,
-            top_p=self.config.top_p,
-            temperature=self.config.temperature,
-            top_k=self.config.top_k,
+            top_p=self.config.params.top_p,
+            temperature=self.config.params.temperature,
+            top_k=self.config.params.top_k,
             repetition_penalty=1.0,
             length_penalty=1,
             pad_token_id=self.tokenizer.eos_token_id,
         )
         output_text = self.tokenizer.decode(outputs[0])
+        stop = "<|start_header_id|>assistant<|end_header_id|>"
+        pos = output_text.rfind(stop)
+        output_text = output_text[pos + len(stop) :]
+        if "<|eot_id|>" in output_text:
+            output_text = output_text.replace("<|eot_id|>", "")
+        output_text = output_text.lstrip().rstrip()
         return output_text
