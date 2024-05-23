@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from jovis_model.configs.klue import KLUEConfig
 from jovis_model.configs.llm import LLMConfig
+from jovis_model.configs.mclip import MCLIPConfig
 from jovis_model.configs.bedrock import BedrockConfig
 
 
@@ -28,4 +29,6 @@ class Config(BaseModel):
             self.params = LLMConfig(**self.params)
         elif self.pkg == "llm" and self.task == "bedrock":
             self.params = BedrockConfig(**self.params)
+        elif self.pkg == "llm" and self.task == "mclip":
+            self.params = MCLIPConfig(**self.params)
         return self
