@@ -46,6 +46,7 @@ class BaseModel:
                     else self.config.params.hf_name
                 ),
                 cache_dir=cache_dir,
+                **config_kwargs,
             )
 
             model_kwargs = kwargs.get("model_kwargs", {})

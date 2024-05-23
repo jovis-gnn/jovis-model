@@ -8,11 +8,13 @@ from jovis_model.config import Config
 DATA_MODULE_LIST = {
     "klue_ynat": "jovis_model.datasets.klue.ynat.YNATProcessor",
     "llm_chat": "jovis_model.datasets.llm.chat.ChatProcessor",
+    "llm_bedrock": "jovis_model.datasets.llm.bedrock.BedrockProcessor",
 }
 
 MODEL_MODULE_LIST = {
     "klue_ynat": "jovis_model.models.klue.sequence_classification.SCTransformer",
     "llm_chat": "jovis_model.models.llm.chat.ChatModel",
+    "llm_bedrock": "jovis_model.models.llm.bedrock.Bedrock",
 }
 
 

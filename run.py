@@ -21,24 +21,24 @@ class ModelRunner:
         self.logger = init_logger("runner")
         self.config = config
         self.mode = mode
-        if self.config.params.enable_fsdp:
-            dist.init_process_group("nccl")
-            self.local_rank = int(os.environ["LOCAL_RANK"])
-            self.rank = int(os.environ["RANK"])
-        if torch.distributed.is_initialized():
-            torch.cuda.set_device(self.local_rank)
-            torch.cuda.empty_cache()
-        self.device_id = 0
-        if torch.cuda.is_available():
-            self.device_id = torch.cuda.current_device()
-
+        if self.config.task != "bedrock":
+            if self.config.params.enable_fsdp:
+                dist.init_process_group("nccl")
+                self.local_rank = int(os.environ["LOCAL_RANK"])
+                self.rank = int(os.environ["RANK"])
+            if torch.distributed.is_initialized():
+                torch.cuda.set_device(self.local_rank)
+                torch.cuda.empty_cache()
+            self.device_id = 0
+            if torch.cuda.is_available():
+                self.device_id = torch.cuda.current_device()
         self.dm: DataModule = self.get_data()
         self.mm: ModelModule = self.get_model()
 
     def get_data(self) -> DataModule:
         dm = DataModule(self.config)
-        self.config.params.num_labels = len(dm.processor.get_labels())
         if self.mode in ["train", "eval"]:
+            self.config.params.num_labels = len(dm.processor.get_labels())
             if self.config.params.enable_fsdp:
                 kwargs = {}
                 dataset = dm.prepare_dataset(self.mode)
@@ -78,18 +78,18 @@ class ModelRunner:
 
     def get_model(self) -> ModelModule:
         mm = ModelModule(self.config)
-        if self.config.params.enable_fsdp:
-            mixed_precision_policy, wrapping_policy = get_policies(config)
-            mm.processor.model = FSDP(
-                mm.processor.model,
-                auto_wrap_policy=wrapping_policy,
-                sharding_strategy=ShardingStrategy.FULL_SHARD,
-                device_id=self.device_id,
-                limit_all_gathers=True,
-            )
-        else:
-            mm.processor.model.to(f"cuda:{self.device_id}")
-
+        if self.config.task != "bedrock":
+            if self.config.params.enable_fsdp:
+                mixed_precision_policy, wrapping_policy = get_policies(config)
+                mm.processor.model = FSDP(
+                    mm.processor.model,
+                    auto_wrap_policy=wrapping_policy,
+                    sharding_strategy=ShardingStrategy.FULL_SHARD,
+                    device_id=self.device_id,
+                    limit_all_gathers=True,
+                )
+            else:
+                mm.processor.model.to(f"cuda:{self.device_id}")
         return mm
 
     def get_optimizers(self, model):
@@ -178,7 +178,8 @@ class ModelRunner:
 
     def inference(self, model_processor, data_processor, sample_inputs):
         sample_inputs = data_processor._convert_features(sample_inputs)
-        sample_inputs = sample_inputs.to(f"cuda:{self.device_id}")
+        if self.config.task != "bedrock":
+            sample_inputs = sample_inputs.to(f"cuda:{self.device_id}")
         outputs = model_processor.inference(sample_inputs)
 
         return outputs
