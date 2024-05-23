@@ -5,3 +5,4 @@ __pycache__/
 
 outputs/
 jovis_model/_db/klue/
+jovis_model/_db/llm/
