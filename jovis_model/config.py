@@ -25,7 +25,11 @@ class Config(BaseModel):
     def load_train_config(self):
         if self.pkg == "klue" and self.task == "ynat":
             self.params = KLUEConfig(**self.params)
-        elif self.pkg == "llm" and self.task == "chat":
+        elif self.pkg == "llm" and self.task in [
+            "chat",
+            "internvl",
+            "sentence_embedding",
+        ]:
             self.params = LLMConfig(**self.params)
         elif self.pkg == "llm" and self.task == "bedrock":
             self.params = BedrockConfig(**self.params)

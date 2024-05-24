@@ -9,12 +9,16 @@ DATA_MODULE_LIST = {
     "klue_ynat": "jovis_model.datasets.klue.ynat.YNATProcessor",
     "llm_chat": "jovis_model.datasets.llm.chat.ChatProcessor",
     "llm_bedrock": "jovis_model.datasets.llm.bedrock.BedrockProcessor",
+    "llm_internvl": "jovis_model.datasets.llm.internvl.InternVLProcessor",
+    "llm_sentence_embedding": "jovis_model.datasets.llm.sentence_embedding.SentenceProcessor",
 }
 
 MODEL_MODULE_LIST = {
     "klue_ynat": "jovis_model.models.klue.sequence_classification.SCTransformer",
     "llm_chat": "jovis_model.models.llm.chat.ChatModel",
     "llm_bedrock": "jovis_model.models.llm.bedrock.Bedrock",
+    "llm_internvl": "jovis_model.models.llm.internvl.InternVLModel",
+    "llm_sentence_embedding": "jovis_model.models.llm.sentence_embedding.SentenceEmbedding",
 }
 
 
