@@ -1,6 +1,6 @@
 from typing import List
 
-# from PIL import Image
+import PIL
 import torch
 import clip
 from transformers import AutoModel, AutoTokenizer, PretrainedConfig, PreTrainedModel
@@ -62,10 +62,11 @@ class CLIPModel:
             "ViT-B/32", device=self.device
         )
 
-    def inference(self, sample_inputs: List[str], dtype="text"):
-        if dtype == "text":
+    def inference(self, sample_inputs: List[str]):
+        if isinstance(sample_inputs, PIL.WebPImagePlugin.WebPImageFile):
+            outputs = self.image_model.encode_image(
+                self.image_processor(sample_inputs).unsqueeze(0).to(self.device)
+            )
+        else:
             outputs = self.text_model.forward(sample_inputs, self.tokenizer)
-        elif dtype == "image":
-            outputs = self.image_processor(sample_inputs).unsqueeze(0).to(self.device)
-
         return outputs
