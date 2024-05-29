@@ -23,7 +23,7 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def load_train_config(self):
-        if self.pkg == "klue" and self.task == "ynat":
+        if self.pkg == "klue":
             self.params = KLUEConfig(**self.params)
         elif self.pkg == "llm" and self.task in [
             "chat",

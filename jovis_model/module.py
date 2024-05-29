@@ -7,6 +7,7 @@ from jovis_model.config import Config
 
 DATA_MODULE_LIST = {
     "klue_ynat": "jovis_model.datasets.klue.ynat.YNATProcessor",
+    "klue_ner": "jovis_model.datasets.klue.ner.NERProcessor",
     "llm_chat": "jovis_model.datasets.llm.chat.ChatProcessor",
     "llm_bedrock": "jovis_model.datasets.llm.bedrock.BedrockProcessor",
     "llm_internvl": "jovis_model.datasets.llm.internvl.InternVLProcessor",

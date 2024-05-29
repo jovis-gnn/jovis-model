@@ -10,11 +10,8 @@ from transformers import AutoTokenizer
 
 from jovis_model.config import Config
 from jovis_model.datasets.base import BaseDataProcessor
-from jovis_model.datasets.klue.utils import (
-    convert_examples_to_features,
-    InputExample,
-    InputFeatures,
-)
+from jovis_model.datasets.input import TextToLabel, TextToLabelFeature
+from jovis_model.datasets.klue.utils import convert_examples_to_features
 
 
 class NERProcessor(BaseDataProcessor):
@@ -32,23 +29,7 @@ class NERProcessor(BaseDataProcessor):
             ),
             cache_dir=cache_dir,
         )
-
-    def get_labels(self) -> List[str]:
-        return [
-            "B-PS",
-            "I-PS",
-            "B-LC",
-            "I-LC",
-            "B-OG",
-            "I-OG",
-            "B-DT",
-            "I-DT",
-            "B-TI",
-            "I-TI",
-            "B-QT",
-            "I-QT",
-            "O",
-        ]
+        self.labels_set = set()
 
     def _is_punctuation(char: str) -> bool:
         cp = ord(char)
@@ -65,7 +46,7 @@ class NERProcessor(BaseDataProcessor):
             return True
         return False
 
-    def _create_examples(self, file_path: str, dataset_type: str) -> List[InputExample]:
+    def _create_examples(self, file_path: str) -> List[TextToLabel]:
         docs = pd.read_csv(file_path)
         examples = []
         for doc_id, doc in docs.values:
@@ -73,7 +54,7 @@ class NERProcessor(BaseDataProcessor):
             new_doc = doc
             labels = ["O"] * len(doc)
 
-            tag_pattern = r"<[ㄱ-ㅎ|가-힣|a-z|0-9]+:[A-Z]+>"
+            tag_pattern = r"<[ㄱ-ㅎ|가-힣|a-z|0-9|\s]+:[A-Z]+>"
             while True:
                 match = re.search(tag_pattern, new_doc)
                 if match is None:
@@ -88,8 +69,15 @@ class NERProcessor(BaseDataProcessor):
                     for idx, l in enumerate([label] * len(target))
                 ]
                 labels = labels[:start] + label + labels[end:]
+                self.labels_set.update(labels)
+
+            assert len(new_doc) == len(labels), "mismatched label exists in document."
 
             sent_words = new_doc.split(" ")
+            labels_without_space = []
+            for char, l in zip(new_doc, labels):
+                if char != " ":
+                    labels_without_space.append(l)
             new_labels = []
             char_idx = 0
             for word in sent_words:
@@ -103,26 +91,28 @@ class NERProcessor(BaseDataProcessor):
                     if not token:
                         new_labels.append("O")
                         continue
-                    new_labels.append(labels[char_idx])
+                    new_labels.append(labels_without_space[char_idx])
                     if not contain_unk:
                         char_idx += len(token)
                 if contain_unk:
                     char_idx += correct_syllable_num
 
-            examples.append(InputExample(guid=doc_id, text_a=new_doc, label=new_labels))
+            examples.append(TextToLabel(iid=doc_id, text_a=new_doc, label=new_labels))
         return examples
 
-    def _convert_features(self, examples: List[InputExample]) -> List[InputFeatures]:
+    def _convert_features(
+        self, examples: List[TextToLabel]
+    ) -> List[TextToLabelFeature]:
         return convert_examples_to_features(
             examples,
             self.tokenizer,
-            label_list=self.get_labels(),
-            max_length=self.hparams.max_seq_length,
+            label_list=sorted(list(self.labels_set)),
+            max_length=self.config.params.max_seq_length,
             task_mode="tagging",
         )
 
-    def _create_dataset(self, file_path: str, dataset_type: str) -> TensorDataset:
-        examples = self._create_examples(file_path, dataset_type)
+    def _create_dataset(self, file_path: str) -> TensorDataset:
+        examples = self._create_examples(file_path)
         features = self._convert_features(examples)
 
         all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)

@@ -44,13 +44,17 @@ class SCTransformer(BaseModel):
         self, batch: List[torch.Tensor], batch_idx: int, data_type: str = "valid"
     ):
         inputs = {"input_ids": batch[0], "attention_mask": batch[1], "labels": batch[3]}
-        if self.is_use_token_type():
-            inputs["token_type_ids"] = batch[2]
 
         outputs = self.forward(**inputs)
         loss, logits = outputs[:2]
 
         return {"logits": logits, "labels": inputs["labels"]}
+
+    def _convert_outputs_to_preds(
+        self, outputs: List[Dict[str, torch.Tensor]]
+    ) -> torch.Tensor:
+        logits = torch.cat([output["logits"] for output in outputs], dim=0)
+        return torch.argmax(logits, dim=1)
 
     def validation_epoch_end(
         self, outputs: List[Dict[str, torch.Tensor]], data_type: str = "valid"
@@ -59,9 +63,3 @@ class SCTransformer(BaseModel):
         preds = self._convert_outputs_to_preds(outputs)
 
         return self.metric(preds, labels)
-
-    def _convert_outputs_to_preds(
-        self, outputs: List[Dict[str, torch.Tensor]]
-    ) -> torch.Tensor:
-        logits = torch.cat([output["logits"] for output in outputs], dim=0)
-        return torch.argmax(logits, dim=1)
