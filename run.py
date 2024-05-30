@@ -32,10 +32,10 @@ class ModelRunner:
             self.device_id = 0
             if torch.cuda.is_available():
                 self.device_id = torch.cuda.current_device()
-        self.dm: DataModule = self.get_data()
-        self.mm: ModelModule = self.get_model()
+        self.dm: DataModule = self.get_data_module()
+        self.mm: ModelModule = self.get_model_module()
 
-    def get_data(self) -> DataModule:
+    def get_data_module(self) -> DataModule:
         dm = DataModule(self.config)
         if self.mode in ["train", "eval"]:
             self.config.params.num_labels = len(dm.processor.get_labels())
@@ -76,7 +76,7 @@ class ModelRunner:
             dm.train_dataloader = train_dataloader
         return dm
 
-    def get_model(self) -> ModelModule:
+    def get_model_module(self) -> ModelModule:
         mm = ModelModule(self.config)
         if self.config.task != "bedrock":
             if self.config.params.enable_fsdp:
@@ -102,6 +102,58 @@ class ModelRunner:
 
         return optimizer, scheduler
 
+    def eval(
+        self,
+        epoch,
+        model_processor,
+        eval_dataloader,
+        config,
+        logger,
+        local_rank=None,
+        rank=None,
+    ) -> None:
+        if config.params.enable_fsdp:
+            world_size = int(os.environ["WORLD_SIZE"])
+        model_processor.model.eval()
+
+        total_loss = 0.0
+        pbar = tqdm(
+            colour="green",
+            desc=f"Evaluating Epoch: {epoch+1}",
+            total=len(eval_dataloader),
+            dynamic_ncols=True,
+        )
+        for step, batch in enumerate(eval_dataloader):
+            for idx_ in range(len(batch)):
+                if config.params.enable_fsdp:
+                    batch[idx_] = batch[idx_].to(local_rank)
+                else:
+                    batch[idx_] = batch[idx_].to("cuda:0")
+
+            with torch.no_grad():
+                outputs = model_processor.validation_step(batch)
+                loss = outputs["loss"]
+                total_loss += loss.detach().float()
+                # metric = model_processor.validation_epoch_end(outputs)
+
+            pbar.update(1)
+            pbar.set_description(
+                f"Evaluating Epoch: {epoch + 1}/{config.params.num_train_epochs}, step {step}/{len(eval_dataloader)} completed (loss: {loss.detach().float()})"
+            )
+        pbar.close()
+
+        if torch.cuda.device_count() > 1 and config.params.enable_fsdp:
+            dist.all_reduce(total_loss, op=dist.ReduceOp.SUM)
+        eval_epoch_loss = total_loss / len(eval_dataloader)
+        if config.params.enable_fsdp:
+            eval_epoch_loss = eval_epoch_loss / world_size
+
+        if config.params.enable_fsdp:
+            if rank == 0:
+                logger.info(f"Epoch {epoch+1}: eval_epoch_loss : {eval_epoch_loss}")
+        else:
+            logger.info(f"Epoch {epoch+1}: eval_epoch_loss : {eval_epoch_loss}")
+
     def train(
         self,
         model_processor,
@@ -122,8 +174,6 @@ class ModelRunner:
 
         autocast = torch.cuda.amp.autocast if config.params.use_fp16 else nullcontext
 
-        train_loss = []
-
         for epoch in range(config.params.num_train_epochs):
             model_processor.model.train()
             total_loss = 0.0
@@ -143,7 +193,7 @@ class ModelRunner:
                     else:
                         batch[idx_] = batch[idx_].to("cuda:0")
                 with autocast():
-                    outputs = model_processor.training_step(batch, step)
+                    outputs = model_processor.training_step(batch)
                     loss = outputs["loss"]
                 total_loss += loss.detach().float()
                 if config.params.use_fp16:
@@ -166,7 +216,6 @@ class ModelRunner:
             train_epoch_loss = total_loss / len(train_dataloader)
             if config.params.enable_fsdp:
                 train_epoch_loss = train_epoch_loss / world_size
-            train_loss.append(train_epoch_loss)
 
             if config.params.enable_fsdp:
                 if rank == 0:

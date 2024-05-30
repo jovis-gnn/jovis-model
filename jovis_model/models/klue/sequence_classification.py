@@ -33,22 +33,20 @@ class SCTransformer(BaseModel):
     def forward(self, **inputs: torch.Tensor):
         return self.model(**inputs)
 
-    def training_step(self, batch: List[torch.Tensor], batch_idx: int):
+    def training_step(self, batch: List[torch.Tensor]):
         inputs = {"input_ids": batch[0], "attention_mask": batch[1], "labels": batch[3]}
         outputs = self.forward(**inputs)
         loss = outputs[0]
 
         return {"loss": loss}
 
-    def validation_step(
-        self, batch: List[torch.Tensor], batch_idx: int, data_type: str = "valid"
-    ):
+    def validation_step(self, batch: List[torch.Tensor]):
         inputs = {"input_ids": batch[0], "attention_mask": batch[1], "labels": batch[3]}
 
         outputs = self.forward(**inputs)
         loss, logits = outputs[:2]
 
-        return {"logits": logits, "labels": inputs["labels"]}
+        return {"loss": loss, "logits": logits, "labels": inputs["labels"]}
 
     def _convert_outputs_to_preds(
         self, outputs: List[Dict[str, torch.Tensor]]
