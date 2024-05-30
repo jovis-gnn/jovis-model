@@ -49,7 +49,7 @@ class DataModule:
                 self.config.data_dir, self.config.train_file_name
             )
         elif dataset_type == "eval":
-            assert self.config.dev_file_name is not None, "There's no eval dataset."
+            assert self.config.eval_file_name is not None, "There's no eval dataset."
             dataset = self.processor.get_dataset(
                 self.config.data_dir, self.config.eval_file_name
             )

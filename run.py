@@ -74,7 +74,7 @@ class ModelRunner:
                         batch_size=batch_size,
                         shuffle=mode_ == "train",
                     )
-                    setattr(dm, f"{mode_}_dataloader", dataloader)
+                setattr(dm, f"{mode_}_dataloader", dataloader)
         return dm
 
     def get_model_module(self) -> ModelModule:
@@ -274,6 +274,7 @@ class ModelRunner:
             self.train(
                 model_processor=self.mm.processor,
                 train_dataloader=self.dm.train_dataloader,
+                eval_dataloader=self.dm.eval_dataloader,
                 optimizer=optimizer,
                 lr_scheduler=lr_scheduler,
                 config=self.config,
