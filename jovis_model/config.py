@@ -14,7 +14,7 @@ class Config(BaseModel):
     use_hf_model: bool
     data_dir: Optional[str] = Field(default=None)
     train_file_name: Optional[str] = Field(default=None)
-    dev_file_name: Optional[str] = Field(default=None)
+    eval_file_name: Optional[str] = Field(default=None)
     test_file_name: Optional[str] = Field(default=None)
     output_dir: Optional[str] = Field(default=None)
     gpus: Optional[int] = Field(default=1)

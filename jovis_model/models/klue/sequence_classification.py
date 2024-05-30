@@ -48,13 +48,14 @@ class SCTransformer(BaseModel):
 
         return {"loss": loss, "logits": logits, "labels": inputs["labels"]}
 
-    def _convert_outputs_to_preds(
-        self, outputs: List[Dict[str, torch.Tensor]]
-    ) -> torch.Tensor:
+    def convert_outputs(self, outputs: List[Dict[str, torch.Tensor]]) -> torch.Tensor:
         logits = torch.cat([output["logits"] for output in outputs], dim=0)
-        return torch.argmax(logits, dim=1)
+        preds = torch.argmax(logits, dim=1)
 
-    def validation_epoch_end(
+        labels = torch.cat([output["labels"] for output in outputs], dim=0)
+        return preds, labels
+
+    def get_metric(
         self, outputs: List[Dict[str, torch.Tensor]], data_type: str = "valid"
     ):
         labels = torch.cat([output["labels"] for output in outputs], dim=0)

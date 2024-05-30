@@ -37,43 +37,44 @@ class ModelRunner:
 
     def get_data_module(self) -> DataModule:
         dm = DataModule(self.config)
-        if self.mode in ["train", "eval"]:
+        if self.mode == "train":
             self.config.params.num_labels = len(dm.processor.get_labels())
-            if self.config.params.enable_fsdp:
-                kwargs = {}
-                dataset = dm.prepare_dataset(self.mode)
-                kwargs["sampler"] = torch.utils.data.DistributedSampler(
-                    dataset,
-                    rank=dist.get_rank(),
-                    num_replicas=dist.get_world_size(),
-                    shuffle=self.mode == "train",
-                )
-                kwargs["batch_size"] = getattr(
-                    self.config.params, f"{self.mode}_batch_size", None
-                )
-                assert (
-                    kwargs["batch_size"] is not None
-                ), f"There's no {self.mode}_batch_size in params."
-                # kwargs["collate_fn"] = default_data_collator
-                train_dataloader = torch.utils.data.DataLoader(
-                    dataset,
-                    num_workers=self.config.params.num_workers,
-                    pin_memory=True,
-                    **kwargs,
-                )
-            else:
-                batch_size = getattr(
-                    self.config.params, f"{self.mode}_batch_size", None
-                )
-                assert (
-                    batch_size is not None
-                ), f"There's no {self.mode}_batch_size in params."
-                train_dataloader = dm.get_dataloader(
-                    dataset_type=self.mode,
-                    batch_size=batch_size,
-                    shuffle=self.mode == "train",
-                )
-            dm.train_dataloader = train_dataloader
+            for mode_ in ["train", "eval"]:
+                if self.config.params.enable_fsdp:
+                    kwargs = {}
+                    dataset = dm.prepare_dataset(mode_)
+                    kwargs["sampler"] = torch.utils.data.DistributedSampler(
+                        dataset,
+                        rank=dist.get_rank(),
+                        num_replicas=dist.get_world_size(),
+                        shuffle=mode_ == "train",
+                    )
+                    kwargs["batch_size"] = getattr(
+                        self.config.params, f"{mode_}_batch_size", None
+                    )
+                    assert (
+                        kwargs["batch_size"] is not None
+                    ), f"There's no {mode_}_batch_size in params."
+                    # kwargs["collate_fn"] = default_data_collator
+                    dataloader = torch.utils.data.DataLoader(
+                        dataset,
+                        num_workers=self.config.params.num_workers,
+                        pin_memory=True,
+                        **kwargs,
+                    )
+                else:
+                    batch_size = getattr(
+                        self.config.params, f"{mode_}_batch_size", None
+                    )
+                    assert (
+                        batch_size is not None
+                    ), f"There's no {self.mode}_batch_size in params."
+                    dataloader = dm.get_dataloader(
+                        dataset_type=self.mode,
+                        batch_size=batch_size,
+                        shuffle=mode_ == "train",
+                    )
+                    setattr(dm, f"{mode_}_dataloader", dataloader)
         return dm
 
     def get_model_module(self) -> ModelModule:
@@ -117,6 +118,9 @@ class ModelRunner:
         model_processor.model.eval()
 
         total_loss = 0.0
+        total_preds = []
+        total_labels = []
+
         pbar = tqdm(
             colour="green",
             desc=f"Evaluating Epoch: {epoch+1}",
@@ -134,7 +138,9 @@ class ModelRunner:
                 outputs = model_processor.validation_step(batch)
                 loss = outputs["loss"]
                 total_loss += loss.detach().float()
-                # metric = model_processor.validation_epoch_end(outputs)
+                preds, labels = model_processor.convert_outputs(outputs)
+                total_preds.append(preds)
+                total_labels.append(labels)
 
             pbar.update(1)
             pbar.set_description(
@@ -148,6 +154,23 @@ class ModelRunner:
         if config.params.enable_fsdp:
             eval_epoch_loss = eval_epoch_loss / world_size
 
+        total_preds = torch.cat(total_preds, dim=0)
+        total_labels = torch.cat(total_labels, dim=0)
+
+        if torch.cuda.device_count() > 1 and config.params.enable_fsdp:
+            total_preds_global = [
+                torch.ones_like(total_preds) for _ in range(dist.get_world_size())
+            ]
+            total_labels_global = [
+                torch.ones_like(total_labels) for _ in range(dist.get_world_size())
+            ]
+            dist.all_gather(total_preds_global, total_preds)
+            dist.all_gather(total_labels_global, total_labels)
+
+        if rank == 0:
+            print(total_preds_global)
+            print(total_labels_global)
+
         if config.params.enable_fsdp:
             if rank == 0:
                 logger.info(f"Epoch {epoch+1}: eval_epoch_loss : {eval_epoch_loss}")
@@ -158,6 +181,7 @@ class ModelRunner:
         self,
         model_processor,
         train_dataloader,
+        eval_dataloader,
         optimizer,
         lr_scheduler,
         config,
@@ -224,6 +248,16 @@ class ModelRunner:
                     )
             else:
                 logger.info(f"Epoch {epoch+1}: train_epoch_loss : {train_epoch_loss}")
+
+            self.eval(
+                epoch=epoch,
+                model_processor=model_processor,
+                eval_dataloader=eval_dataloader,
+                config=config,
+                logger=logger,
+                local_rank=local_rank,
+                rank=rank,
+            )
 
     def inference(self, model_processor, data_processor, sample_inputs):
         sample_inputs = data_processor._convert_features(sample_inputs)
