@@ -144,7 +144,7 @@ class ModelRunner:
 
             pbar.update(1)
             pbar.set_description(
-                f"Evaluating Epoch: {epoch + 1}/{config.params.num_train_epochs}, step {step}/{len(eval_dataloader)} completed (loss: {loss.detach().float()})"
+                f"Evaluating Epoch: {epoch + 1}/{config.params.num_train_epochs}, step {step}/{len(eval_dataloader)} completed (loss: {loss.detach().float():.4f})"
             )
         pbar.close()
 
@@ -166,16 +166,23 @@ class ModelRunner:
             ]
             dist.all_gather(total_preds_global, total_preds)
             dist.all_gather(total_labels_global, total_labels)
+            total_preds_global = torch.cat(total_preds_global, dim=0)
+            total_labels_global = torch.cat(total_labels_global, dim=0)
+            total_preds = total_preds_global
+            total_labels = total_labels_global
 
-        if rank == 0:
-            print(total_preds_global)
-            print(total_labels_global)
-
+        total_preds = total_preds.cpu().numpy()
+        total_labels = total_labels.cpu().numpy()
+        metrics = model_processor.get_metric(total_preds, total_labels)
         if config.params.enable_fsdp:
             if rank == 0:
-                logger.info(f"Epoch {epoch+1}: eval_epoch_loss : {eval_epoch_loss}")
+                logger.info(f"Epoch {epoch+1}: eval_epoch_loss : {eval_epoch_loss:.4f}")
+                for metric, value in metrics.items():
+                    logger.info(f"Epoch {epoch+1}: eval_epoch_{metric} : {value:.4f}")
         else:
-            logger.info(f"Epoch {epoch+1}: eval_epoch_loss : {eval_epoch_loss}")
+            logger.info(f"Epoch {epoch+1}: eval_epoch_loss : {eval_epoch_loss:.4f}")
+            for metric, value in metrics.items():
+                logger.info(f"Epoch {epoch+1}: eval_epoch_{metric}: {value:.4f}")
 
     def train(
         self,
@@ -198,6 +205,15 @@ class ModelRunner:
 
         autocast = torch.cuda.amp.autocast if config.params.use_fp16 else nullcontext
 
+        self.eval(
+            epoch=0,
+            model_processor=model_processor,
+            eval_dataloader=eval_dataloader,
+            config=config,
+            logger=logger,
+            local_rank=local_rank,
+            rank=rank,
+        )
         for epoch in range(config.params.num_train_epochs):
             model_processor.model.train()
             total_loss = 0.0
@@ -231,7 +247,7 @@ class ModelRunner:
                     optimizer.zero_grad()
                 pbar.update(1)
                 pbar.set_description(
-                    f"Training Epoch: {epoch+1}/{config.params.num_train_epochs}, step {step}/{len(train_dataloader)} completed (loss: {loss.detach().float()})"
+                    f"Training Epoch: {epoch+1}/{config.params.num_train_epochs} step {step}/{len(train_dataloader)} completed (loss: {loss.detach().float():.4f})"
                 )
             pbar.close()
 
@@ -244,10 +260,12 @@ class ModelRunner:
             if config.params.enable_fsdp:
                 if rank == 0:
                     logger.info(
-                        f"Epoch {epoch+1}: train_epoch_loss : {train_epoch_loss}"
+                        f"Epoch {epoch+1}: train_epoch_loss : {train_epoch_loss:.4f}"
                     )
             else:
-                logger.info(f"Epoch {epoch+1}: train_epoch_loss : {train_epoch_loss}")
+                logger.info(
+                    f"Epoch {epoch+1}: train_epoch_loss : {train_epoch_loss:.4f}"
+                )
 
             self.eval(
                 epoch=epoch,
@@ -310,7 +328,7 @@ if __name__ == "__main__":
         "use_hf_model": True,
         "data_dir": "/home/omnious/workspace/jovis/jovis-model/jovis_model/_db/klue/ynat-v1.1",
         "train_file_name": "ynat-v1.1_train.json",
-        "dev_file_name": "ynat-v1.1_dev.json",
+        "eval_file_name": "ynat-v1.1_dev.json",
         "output_dir": "/home/omnious/workspace/jovis/jovis-model/outputs",
         "params": {
             "enable_fsdp": True,

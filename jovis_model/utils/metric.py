@@ -1,6 +1,6 @@
 from typing import List
 
-import sklearn
+from sklearn.metrics import f1_score
 import numpy as np
 
 
@@ -12,4 +12,4 @@ def macro_f1(
 ):
     if label_list is not None:
         label_list = list(range(len(label_list)))
-    return sklearn.metrics.f1_score(targets, preds, labels=label_list, average="macro")
+    return f1_score(targets, preds, labels=label_list, average="macro")

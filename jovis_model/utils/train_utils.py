@@ -66,3 +66,15 @@ def get_policies(config):
             mixed_precision_policy = fpSixteen
     wrapping_policy = get_klue_wrapper()
     return mixed_precision_policy, wrapping_policy
+
+
+class MemoryTrace:
+    def __enter__(self):
+        gc.collect()
+        if is_xpu_available():
+            torch.xpu.empty_cache()
+            torch.xpu.reset_max_memory_allocated()
+            self.begin = byte2gb(torch.xpu.memory_allocated())
+        elif torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.reset_max_memory_allocated()

@@ -1,19 +1,20 @@
-from typing import Any, Dict, List
+from typing import Dict, List
 
 import torch
+import numpy as np
 from transformers import AutoModelForSequenceClassification
 
-from jovis_model.models.base import BaseModel
 from jovis_model.config import Config
+from jovis_model.models.base import BaseModel
+from jovis_model.utils.metric import macro_f1
 
 
 class SCTransformer(BaseModel):
-    def __init__(self, config: Config, metrics: Dict[str, Any] = None):
+    def __init__(self, config: Config):
         super().__init__(
             config,
             use_hf_model=True,
             model_type=AutoModelForSequenceClassification,
-            metrics=metrics,
             **{"config_kwargs": {"num_labels": config.params.num_labels}},
         )
 
@@ -29,6 +30,8 @@ class SCTransformer(BaseModel):
                     self.p_config, p
                 ), f"model config doesn't have a `{p}` attribute"
                 setattr(self.p_config, p, getattr(self.config.params, p))
+
+        self.metric = {"f1": macro_f1}
 
     def forward(self, **inputs: torch.Tensor):
         return self.model(**inputs)
@@ -48,17 +51,14 @@ class SCTransformer(BaseModel):
 
         return {"loss": loss, "logits": logits, "labels": inputs["labels"]}
 
-    def convert_outputs(self, outputs: List[Dict[str, torch.Tensor]]) -> torch.Tensor:
-        logits = torch.cat([output["logits"] for output in outputs], dim=0)
-        preds = torch.argmax(logits, dim=1)
-
-        labels = torch.cat([output["labels"] for output in outputs], dim=0)
+    def convert_outputs(self, outputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+        preds = torch.argmax(outputs["logits"], dim=1)
+        labels = outputs["labels"]
         return preds, labels
 
-    def get_metric(
-        self, outputs: List[Dict[str, torch.Tensor]], data_type: str = "valid"
-    ):
-        labels = torch.cat([output["labels"] for output in outputs], dim=0)
-        preds = self._convert_outputs_to_preds(outputs)
+    def get_metric(self, preds: np.ndarray, labels: np.ndarray) -> dict:
+        res = {}
+        for k, func in self.metric.items():
+            res[k] = func(preds, labels)
 
-        return self.metric(preds, labels)
+        return res
