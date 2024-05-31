@@ -12,7 +12,7 @@ from torch.distributed.fsdp.sharded_grad_scaler import ShardedGradScaler
 
 from jovis_model.config import Config
 from jovis_model.utils.helper import init_logger
-from jovis_model.utils.train_utils import get_policies
+from jovis_model.utils.train_utils import get_policies, MemoryTrace
 from jovis_model.module import DataModule, ModelModule
 
 
@@ -115,38 +115,40 @@ class ModelRunner:
     ) -> None:
         if config.params.enable_fsdp:
             world_size = int(os.environ["WORLD_SIZE"])
-        model_processor.model.eval()
 
-        total_loss = 0.0
-        total_preds = []
-        total_labels = []
+        with MemoryTrace() as memtrace:
+            model_processor.model.eval()
 
-        pbar = tqdm(
-            colour="green",
-            desc=f"Evaluating Epoch: {epoch+1}",
-            total=len(eval_dataloader),
-            dynamic_ncols=True,
-        )
-        for step, batch in enumerate(eval_dataloader):
-            for idx_ in range(len(batch)):
-                if config.params.enable_fsdp:
-                    batch[idx_] = batch[idx_].to(local_rank)
-                else:
-                    batch[idx_] = batch[idx_].to("cuda:0")
+            total_loss = 0.0
+            total_preds = []
+            total_labels = []
 
-            with torch.no_grad():
-                outputs = model_processor.validation_step(batch)
-                loss = outputs["loss"]
-                total_loss += loss.detach().float()
-                preds, labels = model_processor.convert_outputs(outputs)
-                total_preds.append(preds)
-                total_labels.append(labels)
-
-            pbar.update(1)
-            pbar.set_description(
-                f"Evaluating Epoch: {epoch + 1}/{config.params.num_train_epochs}, step {step}/{len(eval_dataloader)} completed (loss: {loss.detach().float():.4f})"
+            pbar = tqdm(
+                colour="green",
+                desc=f"Evaluating Epoch: {epoch+1}",
+                total=len(eval_dataloader),
+                dynamic_ncols=True,
             )
-        pbar.close()
+            for step, batch in enumerate(eval_dataloader):
+                for idx_ in range(len(batch)):
+                    if config.params.enable_fsdp:
+                        batch[idx_] = batch[idx_].to(local_rank)
+                    else:
+                        batch[idx_] = batch[idx_].to("cuda:0")
+
+                with torch.no_grad():
+                    outputs = model_processor.validation_step(batch)
+                    loss = outputs["loss"]
+                    total_loss += loss.detach().float()
+                    preds, labels = model_processor.convert_outputs(outputs)
+                    total_preds.append(preds)
+                    total_labels.append(labels)
+
+                pbar.update(1)
+                pbar.set_description(
+                    f"Evaluating Epoch: {epoch + 1}/{config.params.num_train_epochs}, step {step}/{len(eval_dataloader)} completed (loss: {loss.detach().float():.4f})"
+                )
+            pbar.close()
 
         if torch.cuda.device_count() > 1 and config.params.enable_fsdp:
             dist.all_reduce(total_loss, op=dist.ReduceOp.SUM)
@@ -184,6 +186,9 @@ class ModelRunner:
             for metric, value in metrics.items():
                 logger.info(f"Epoch {epoch+1}: eval_epoch_{metric}: {value:.4f}")
 
+        if not config.params.enable_fsdp or rank == 0:
+            memtrace.print_stats()
+
     def train(
         self,
         model_processor,
@@ -215,41 +220,42 @@ class ModelRunner:
             rank=rank,
         )
         for epoch in range(config.params.num_train_epochs):
-            model_processor.model.train()
-            total_loss = 0.0
-            total_length = (
-                len(train_dataloader) // config.params.gradient_accumulation_steps
-            )
-            pbar = tqdm(
-                colour="blue",
-                desc=f"Training Epoch: {epoch+1}",
-                total=total_length,
-                dynamic_ncols=True,
-            )
-            for step, batch in enumerate(train_dataloader):
-                for idx_ in range(len(batch)):
-                    if config.params.enable_fsdp:
-                        batch[idx_] = batch[idx_].to(local_rank)
-                    else:
-                        batch[idx_] = batch[idx_].to("cuda:0")
-                with autocast():
-                    outputs = model_processor.training_step(batch)
-                    loss = outputs["loss"]
-                total_loss += loss.detach().float()
-                if config.params.use_fp16:
-                    scaler.scale(loss).backward()
-                    scaler.step(optimizer)
-                    scaler.update()
-                    optimizer.zero_grad()
-                else:
-                    loss.backward()
-                    optimizer.step()
-                    optimizer.zero_grad()
-                pbar.update(1)
-                pbar.set_description(
-                    f"Training Epoch: {epoch+1}/{config.params.num_train_epochs} step {step}/{len(train_dataloader)} completed (loss: {loss.detach().float():.4f})"
+            with MemoryTrace() as memtrace:
+                model_processor.model.train()
+                total_loss = 0.0
+                total_length = (
+                    len(train_dataloader) // config.params.gradient_accumulation_steps
                 )
-            pbar.close()
+                pbar = tqdm(
+                    colour="blue",
+                    desc=f"Training Epoch: {epoch+1}",
+                    total=total_length,
+                    dynamic_ncols=True,
+                )
+                for step, batch in enumerate(train_dataloader):
+                    for idx_ in range(len(batch)):
+                        if config.params.enable_fsdp:
+                            batch[idx_] = batch[idx_].to(local_rank)
+                        else:
+                            batch[idx_] = batch[idx_].to("cuda:0")
+                    with autocast():
+                        outputs = model_processor.training_step(batch)
+                        loss = outputs["loss"]
+                    total_loss += loss.detach().float()
+                    if config.params.use_fp16:
+                        scaler.scale(loss).backward()
+                        scaler.step(optimizer)
+                        scaler.update()
+                        optimizer.zero_grad()
+                    else:
+                        loss.backward()
+                        optimizer.step()
+                        optimizer.zero_grad()
+                    pbar.update(1)
+                    pbar.set_description(
+                        f"Training Epoch: {epoch+1}/{config.params.num_train_epochs} step {step}/{len(train_dataloader)} completed (loss: {loss.detach().float():.4f})"
+                    )
+                pbar.close()
 
             if torch.cuda.device_count() > 1 and config.params.enable_fsdp:
                 dist.all_reduce(total_loss, op=dist.ReduceOp.SUM)
@@ -266,7 +272,8 @@ class ModelRunner:
                 logger.info(
                     f"Epoch {epoch+1}: train_epoch_loss : {train_epoch_loss:.4f}"
                 )
-
+            if not config.params.enable_fsdp or rank == 0:
+                memtrace.print_stats()
             self.eval(
                 epoch=epoch,
                 model_processor=model_processor,
@@ -331,7 +338,7 @@ if __name__ == "__main__":
         "eval_file_name": "ynat-v1.1_dev.json",
         "output_dir": "/home/omnious/workspace/jovis/jovis-model/outputs",
         "params": {
-            "enable_fsdp": True,
+            "enable_fsdp": False,
             "use_fp16": True,
             "mixed_precision": True,
         },
