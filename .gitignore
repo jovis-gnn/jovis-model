@@ -6,5 +6,4 @@ outputs/
 jovis_model/_db/klue/
 jovis_model/_db/llm/
 
-notebooks/
-*.ipynb
+.ipynb_checkpoints/
