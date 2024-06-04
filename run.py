@@ -1,4 +1,5 @@
 import os
+import random
 
 # import pdb
 from tqdm import tqdm
@@ -8,30 +9,50 @@ import torch
 import torch.optim as optim
 import torch.distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP, ShardingStrategy
+from torch.distributed.fsdp.fully_sharded_data_parallel import CPUOffload
 from torch.distributed.fsdp.sharded_grad_scaler import ShardedGradScaler
+from accelerate.utils import is_xpu_available
+from peft import get_peft_model, prepare_model_for_kbit_training
 
 from jovis_model.config import Config
 from jovis_model.utils.helper import init_logger
-from jovis_model.utils.train_utils import get_policies, MemoryTrace
+from jovis_model.utils.train_utils import (
+    get_policies,
+    MemoryTrace,
+    generate_peft_config,
+)
 from jovis_model.module import DataModule, ModelModule
 
 
 class ModelRunner:
-    def __init__(self, config: Config, mode: str = "train") -> None:
+    def __init__(self, config: Config, mode: str = "train", seed=42) -> None:
         self.logger = init_logger("runner")
         self.config = config
         self.mode = mode
+
+        if is_xpu_available():
+            torch.xpu.manual_seed(seed)
+        torch.manual_seed(seed)
+        random.seed(seed)
+
         if self.config.task != "bedrock":
             if self.config.params.enable_fsdp:
                 dist.init_process_group("nccl")
                 self.local_rank = int(os.environ["LOCAL_RANK"])
                 self.rank = int(os.environ["RANK"])
             if torch.distributed.is_initialized():
-                torch.cuda.set_device(self.local_rank)
-                torch.cuda.empty_cache()
-            self.device_id = 0
-            if torch.cuda.is_available():
-                self.device_id = torch.cuda.current_device()
+                if is_xpu_available():
+                    torch.xpu.set_device(self.local_rank)
+                    torch.xpu_empty_cache()
+                elif torch.cuda.is_available():
+                    torch.cuda.set_device(self.local_rank)
+                    torch.cuda.empty_cache()
+            self.device_id = "cpu"
+            if is_xpu_available():
+                self.device_id = "xpu:0"
+            elif torch.cuda.is_available():
+                self.device_id = f"cuda:{torch.cuda.current_device()}"
+
         self.dm: DataModule = self.get_data_module()
         self.mm: ModelModule = self.get_model_module()
 
@@ -80,17 +101,29 @@ class ModelRunner:
     def get_model_module(self) -> ModelModule:
         mm = ModelModule(self.config)
         if self.config.task != "bedrock":
+            if self.config.params.quantization:
+                mm.processor.model = prepare_model_for_kbit_training(mm.processor.model)
+
+            if self.config.params.use_fp16:
+                mm.processor.model = mm.processor.model.to(torch.bfloat16)
+
+            if self.config.params.use_peft:
+                peft_config = generate_peft_config(config)
+                mm.processor.model = get_peft_model(mm.processor.model, peft_config)
+
             if self.config.params.enable_fsdp:
                 mixed_precision_policy, wrapping_policy = get_policies(config)
                 mm.processor.model = FSDP(
                     mm.processor.model,
                     auto_wrap_policy=wrapping_policy,
+                    cpu_offload=CPUOffload(offload_params=True),
+                    mixed_precision=mixed_precision_policy,
                     sharding_strategy=ShardingStrategy.FULL_SHARD,
-                    device_id=self.device_id,
+                    device_id=int(self.device_id.split(":")[-1]),
                     limit_all_gathers=True,
                 )
             else:
-                mm.processor.model.to(f"cuda:{self.device_id}")
+                mm.processor.model.to(self.device_id)
         return mm
 
     def get_optimizers(self, model):
@@ -235,9 +268,14 @@ class ModelRunner:
                 for step, batch in enumerate(train_dataloader):
                     for idx_ in range(len(batch)):
                         if config.params.enable_fsdp:
-                            batch[idx_] = batch[idx_].to(local_rank)
+                            if is_xpu_available():
+                                batch[idx_] = batch[idx_].to(
+                                    torch.device(f"xpu:{local_rank}")
+                                )
+                            else:
+                                batch[idx_] = batch[idx_].to(local_rank)
                         else:
-                            batch[idx_] = batch[idx_].to("cuda:0")
+                            batch[idx_] = batch[idx_].to(self.device_id)
                     with autocast():
                         outputs = model_processor.training_step(batch)
                         loss = outputs["loss"]

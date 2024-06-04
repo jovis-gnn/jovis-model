@@ -1,7 +1,5 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-import torch
-import torch.nn as nn
 from transformers import (
     AutoConfig,
     AutoTokenizer,
@@ -19,7 +17,6 @@ class BaseModel:
         config: Config,
         use_hf_model: bool,
         model_type: Optional[str] = None,
-        metrics: Optional[Dict[str, Any]] = None,
         **kwargs: Dict[str, Dict[str, Any]],
     ):
         self.config = config
@@ -59,15 +56,20 @@ class BaseModel:
             )
         else:
             self.model = model_type(self.config)
-        if metrics:
-            self.metrics = nn.ModuleDict(metrics)
 
-    def training_step(self) -> Dict[str, torch.Tensor]:
+    def forward(self):
         raise NotImplementedError
 
-    def validation_step(
-        self, batch: List[torch.Tensor], batch_idx: int, data_type: str
-    ) -> Dict[str, torch.Tensor]:
+    def training_step(self):
+        raise NotImplementedError
+
+    def validation_step(self):
+        raise NotImplementedError
+
+    def convert_outputs(self):
+        raise NotImplementedError
+
+    def get_metric(self):
         raise NotImplementedError
 
     def inference(self):

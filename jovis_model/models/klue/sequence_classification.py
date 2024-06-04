@@ -15,7 +15,7 @@ class SCTransformer(BaseModel):
             config,
             use_hf_model=True,
             model_type=AutoModelForSequenceClassification,
-            **{"config_kwargs": {"num_labels": config.params.num_labels}},
+            config_kwargs={"num_labels": config.params.num_labels},
         )
 
         extra_model_params = (
@@ -45,7 +45,6 @@ class SCTransformer(BaseModel):
 
     def validation_step(self, batch: List[torch.Tensor]):
         inputs = {"input_ids": batch[0], "attention_mask": batch[1], "labels": batch[3]}
-
         outputs = self.forward(**inputs)
         loss, logits = outputs[:2]
 

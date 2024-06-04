@@ -43,6 +43,10 @@ fp32_policy = MixedPrecision(
 )
 
 
+def generate_peft_config():
+    pass
+
+
 def get_klue_wrapper():
     auto_wrap_policy = functools.partial(
         transformer_auto_wrap_policy,
@@ -57,7 +61,7 @@ def get_policies(config):
         and torch.cuda.is_bf16_supported()
         and dist.is_nccl_available()
         and nccl.version() >= (2, 10)
-    )
+    ) or (is_xpu_available())
 
     mixed_precision_policy = None
     wrapping_policy = None
@@ -65,7 +69,7 @@ def get_policies(config):
     if config.params.mixed_precision:
         bf16_ready = verify_bfloat_support
 
-        if bf16_ready and not config.params.use_fp16:
+        if bf16_ready:
             mixed_precision_policy = bfSixteen
         elif config.params.use_fp16:
             mixed_precision_policy = fpSixteen

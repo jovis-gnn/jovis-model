@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Dict, List
 
 import torch
 from transformers import AutoModelForCausalLM
@@ -8,22 +8,48 @@ from jovis_model.config import Config
 
 
 class ChatModel(BaseModel):
-    def __init__(self, config: Config, metrics: Dict[str, Any] = None):
+    def __init__(self, config: Config):
         self.config = config
         super().__init__(
             self.config,
-            use_hf_model=True,
+            use_hf_model=self.config.use_hf_model,
             model_type=AutoModelForCausalLM,
-            **{
-                "config_kwargs": {
-                    "trust_remote_code": True,
-                },
-                "model_kwargs": {
-                    "torch_dtype": torch.bfloat16,
-                    "trust_remote_code": True,
-                },
-            }
+            config_kwargs={
+                "trust_remote_code": True,
+            },
+            model_kwargs={
+                "torch_dtype": torch.bfloat16,
+                "trust_remote_code": True,
+            },
         )
+        self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        if len(self.tokenizer) > self.model.get_input_embeddings().weight.shape[0]:
+            self.model.resize_token_embeddings(len(self.tokenizer))
+
+    def forward(self, **inputs: Dict[str, List[List[torch.Tensor]]]):
+        return self.model(**inputs)
+
+    def training_step(self, batch: List[List[torch.Tensor]]):
+        inputs = {"input_ids": batch[0], "attention_mask": batch[1], "labels": batch[2]}
+        outputs = self.forward(**inputs)
+        loss = outputs[0]
+
+        return {"loss": loss}
+
+    def validation_step(self, batch: List[List[torch.Tensor]]):
+        inputs = {"input_ids": batch[0], "attention_mask": batch[1], "labels": batch[2]}
+        outputs = self.forward(**inputs)
+        loss, logits = outputs[:2]
+
+        return {"loss": loss, "logits": logits, "labels": inputs["labels"]}
+
+    def convert_outputs(self, outputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+        preds = torch.argmax(outputs["logits"], dim=1)
+        labels = outputs["labels"]
+        return preds, labels
+
+    def get_metric(self):
+        pass
 
     def inference(self, sample_inputs: torch.Tensor):
         outputs = self.model.generate(

@@ -27,3 +27,16 @@ class TextToLabelFeature:
 
     def to_json_string(self) -> None:
         return json.dumps(dataclasses.asdict(self))
+
+
+@dataclass
+class DialogToLabel:
+    eid: str
+    dialog: List[dict]
+    label: str
+
+    def to_dict(self) -> Dict[str, str]:
+        return dataclasses.asdict(self)
+
+    def to_json_string(self) -> None:
+        return json.dumps(self.to_dict(), indent=4)
