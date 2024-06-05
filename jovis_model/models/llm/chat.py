@@ -22,21 +22,25 @@ class ChatModel(BaseModel):
                 "trust_remote_code": True,
             },
         )
-        self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        if not self.tokenizer.pad_token_id:
+            pad_token_id = self.tokenizer.convert_tokens_to_ids("<|end_of_text|>")
+            self.tokenizer.pad_token = "<|end_of_text|>"
+            self.tokenizer.pad_token_id = pad_token_id
+        # self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
         if len(self.tokenizer) > self.model.get_input_embeddings().weight.shape[0]:
             self.model.resize_token_embeddings(len(self.tokenizer))
 
-    def forward(self, **inputs: Dict[str, List[List[torch.Tensor]]]):
+    def forward(self, **inputs: Dict[str, List[torch.Tensor]]):
         return self.model(**inputs)
 
-    def training_step(self, batch: List[List[torch.Tensor]]):
+    def training_step(self, batch: List[torch.Tensor]):
         inputs = {"input_ids": batch[0], "attention_mask": batch[1], "labels": batch[2]}
         outputs = self.forward(**inputs)
         loss = outputs[0]
 
         return {"loss": loss}
 
-    def validation_step(self, batch: List[List[torch.Tensor]]):
+    def validation_step(self, batch: List[torch.Tensor]):
         inputs = {"input_ids": batch[0], "attention_mask": batch[1], "labels": batch[2]}
         outputs = self.forward(**inputs)
         loss, logits = outputs[:2]
