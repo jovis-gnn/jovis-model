@@ -9,6 +9,8 @@ import torch.distributed as dist
 from torch.distributed.fsdp import MixedPrecision
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 from transformers.models.roberta.modeling_roberta import RobertaEncoder
+from transformers.models.llama.modeling_llama import LlamaDecoderLayer
+
 
 from accelerate.utils import is_xpu_available
 
@@ -47,10 +49,11 @@ def generate_peft_config():
     pass
 
 
-def get_klue_wrapper():
+def get_transformer_wrapper(pkg):
+    layer_map = {"klue": RobertaEncoder, "llm": LlamaDecoderLayer}
     auto_wrap_policy = functools.partial(
         transformer_auto_wrap_policy,
-        transformer_layer_cls={RobertaEncoder},
+        transformer_layer_cls={layer_map[pkg]},
     )
     return auto_wrap_policy
 
@@ -73,7 +76,7 @@ def get_policies(config):
             mixed_precision_policy = bfSixteen
         elif config.params.use_fp16:
             mixed_precision_policy = fpSixteen
-    wrapping_policy = get_klue_wrapper()
+    wrapping_policy = get_transformer_wrapper(config.pkg)
     return mixed_precision_policy, wrapping_policy
 
 

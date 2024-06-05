@@ -47,13 +47,10 @@ class ChatModel(BaseModel):
 
         return {"loss": loss, "logits": logits, "labels": inputs["labels"]}
 
-    def convert_outputs(self, outputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def convert_outputs(self, outputs: Dict[str, torch.Tensor]):
         preds = torch.argmax(outputs["logits"], dim=1)
         labels = outputs["labels"]
         return preds, labels
-
-    def get_metric(self):
-        pass
 
     def inference(self, sample_inputs: torch.Tensor):
         outputs = self.model.generate(

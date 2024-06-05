@@ -32,7 +32,6 @@ class KLUEConfig(BaseModel, extra=Extra.allow):
     max_grad_norm: float = Field(default=1.0)
     gradient_accumulation_steps: int = Field(default=1)
     seed: int = Field(default=42)
-    metric: str = Field(default="loss")
     patience: int = Field(default=5)
     early_stopping_mode: str = Field(default="max")
     encoder_layerdrop: Optional[float] = Field(default=None)

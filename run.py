@@ -25,15 +25,15 @@ from jovis_model.module import DataModule, ModelModule
 
 
 class ModelRunner:
-    def __init__(self, config: Config, mode: str = "train", seed=42) -> None:
+    def __init__(self, config: Config, mode: str = "train") -> None:
         self.logger = init_logger("runner")
         self.config = config
         self.mode = mode
 
         if is_xpu_available():
-            torch.xpu.manual_seed(seed)
-        torch.manual_seed(seed)
-        random.seed(seed)
+            torch.xpu.manual_seed(self.config.params.seed)
+        torch.manual_seed(self.config.params.seed)
+        random.seed(self.config.params.seed)
 
         if self.config.task != "bedrock":
             if self.config.params.enable_fsdp:
@@ -61,41 +61,43 @@ class ModelRunner:
         if self.mode == "train":
             self.config.params.num_labels = len(dm.processor.get_labels())
             for mode_ in ["train", "eval"]:
-                if self.config.params.enable_fsdp:
-                    kwargs = {}
-                    dataset = dm.prepare_dataset(mode_)
-                    kwargs["sampler"] = torch.utils.data.DistributedSampler(
-                        dataset,
-                        rank=dist.get_rank(),
-                        num_replicas=dist.get_world_size(),
-                        shuffle=mode_ == "train",
-                    )
-                    kwargs["batch_size"] = getattr(
-                        self.config.params, f"{mode_}_batch_size", None
-                    )
-                    assert (
-                        kwargs["batch_size"] is not None
-                    ), f"There's no {mode_}_batch_size in params."
-                    # kwargs["collate_fn"] = default_data_collator
-                    dataloader = torch.utils.data.DataLoader(
-                        dataset,
-                        num_workers=self.config.params.num_workers,
-                        pin_memory=True,
-                        **kwargs,
-                    )
+                if getattr(self.config, f"{mode_}_file_name", None):
+                    if self.config.params.enable_fsdp:
+                        kwargs = {}
+                        dataset = dm.prepare_dataset(mode_)
+                        kwargs["sampler"] = torch.utils.data.DistributedSampler(
+                            dataset,
+                            rank=dist.get_rank(),
+                            num_replicas=dist.get_world_size(),
+                            shuffle=mode_ == "train",
+                        )
+                        kwargs["batch_size"] = getattr(
+                            self.config.params, f"{mode_}_batch_size", None
+                        )
+                        assert (
+                            kwargs["batch_size"] is not None
+                        ), f"There's no {mode_}_batch_size in params."
+                        dataloader = torch.utils.data.DataLoader(
+                            dataset,
+                            num_workers=self.config.params.num_workers,
+                            pin_memory=True,
+                            **kwargs,
+                        )
+                    else:
+                        batch_size = getattr(
+                            self.config.params, f"{mode_}_batch_size", None
+                        )
+                        assert (
+                            batch_size is not None
+                        ), f"There's no {self.mode}_batch_size in params."
+                        dataloader = dm.get_dataloader(
+                            dataset_type=self.mode,
+                            batch_size=batch_size,
+                            shuffle=mode_ == "train",
+                        )
+                    setattr(dm, f"{mode_}_dataloader", dataloader)
                 else:
-                    batch_size = getattr(
-                        self.config.params, f"{mode_}_batch_size", None
-                    )
-                    assert (
-                        batch_size is not None
-                    ), f"There's no {self.mode}_batch_size in params."
-                    dataloader = dm.get_dataloader(
-                        dataset_type=self.mode,
-                        batch_size=batch_size,
-                        shuffle=mode_ == "train",
-                    )
-                setattr(dm, f"{mode_}_dataloader", dataloader)
+                    setattr(dm, f"{mode_}_dataloader", None)
         return dm
 
     def get_model_module(self) -> ModelModule:
@@ -108,11 +110,11 @@ class ModelRunner:
                 mm.processor.model = mm.processor.model.to(torch.bfloat16)
 
             if self.config.params.use_peft:
-                peft_config = generate_peft_config(config)
+                peft_config = generate_peft_config(self.config)
                 mm.processor.model = get_peft_model(mm.processor.model, peft_config)
 
             if self.config.params.enable_fsdp:
-                mixed_precision_policy, wrapping_policy = get_policies(config)
+                mixed_precision_policy, wrapping_policy = get_policies(self.config)
                 mm.processor.model = FSDP(
                     mm.processor.model,
                     auto_wrap_policy=wrapping_policy,
@@ -173,9 +175,10 @@ class ModelRunner:
                     outputs = model_processor.validation_step(batch)
                     loss = outputs["loss"]
                     total_loss += loss.detach().float()
-                    preds, labels = model_processor.convert_outputs(outputs)
-                    total_preds.append(preds)
-                    total_labels.append(labels)
+                    if getattr(model_processor, "metric", None):
+                        preds, labels = model_processor.convert_outputs(outputs)
+                        total_preds.append(preds)
+                        total_labels.append(labels)
 
                 pbar.update(1)
                 pbar.set_description(
@@ -189,26 +192,29 @@ class ModelRunner:
         if config.params.enable_fsdp:
             eval_epoch_loss = eval_epoch_loss / world_size
 
-        total_preds = torch.cat(total_preds, dim=0)
-        total_labels = torch.cat(total_labels, dim=0)
+        if getattr(model_processor, "metric", None):
+            total_preds = torch.cat(total_preds, dim=0)
+            total_labels = torch.cat(total_labels, dim=0)
 
-        if torch.cuda.device_count() > 1 and config.params.enable_fsdp:
-            total_preds_global = [
-                torch.ones_like(total_preds) for _ in range(dist.get_world_size())
-            ]
-            total_labels_global = [
-                torch.ones_like(total_labels) for _ in range(dist.get_world_size())
-            ]
-            dist.all_gather(total_preds_global, total_preds)
-            dist.all_gather(total_labels_global, total_labels)
-            total_preds_global = torch.cat(total_preds_global, dim=0)
-            total_labels_global = torch.cat(total_labels_global, dim=0)
-            total_preds = total_preds_global
-            total_labels = total_labels_global
+            if torch.cuda.device_count() > 1 and config.params.enable_fsdp:
+                total_preds_global = [
+                    torch.ones_like(total_preds) for _ in range(dist.get_world_size())
+                ]
+                total_labels_global = [
+                    torch.ones_like(total_labels) for _ in range(dist.get_world_size())
+                ]
+                dist.all_gather(total_preds_global, total_preds)
+                dist.all_gather(total_labels_global, total_labels)
+                total_preds_global = torch.cat(total_preds_global, dim=0)
+                total_labels_global = torch.cat(total_labels_global, dim=0)
+                total_preds = total_preds_global
+                total_labels = total_labels_global
 
-        total_preds = total_preds.cpu().numpy()
-        total_labels = total_labels.cpu().numpy()
-        metrics = model_processor.get_metric(total_preds, total_labels)
+            total_preds = total_preds.cpu().numpy()
+            total_labels = total_labels.cpu().numpy()
+            metrics = model_processor.get_metric(total_preds, total_labels)
+        else:
+            metrics = {}
         if config.params.enable_fsdp:
             if rank == 0:
                 logger.info(f"Epoch {epoch+1}: eval_epoch_loss : {eval_epoch_loss:.4f}")
@@ -312,15 +318,17 @@ class ModelRunner:
                 )
             if not config.params.enable_fsdp or rank == 0:
                 memtrace.print_stats()
-            self.eval(
-                epoch=epoch,
-                model_processor=model_processor,
-                eval_dataloader=eval_dataloader,
-                config=config,
-                logger=logger,
-                local_rank=local_rank,
-                rank=rank,
-            )
+
+            if eval_dataloader:
+                self.eval(
+                    epoch=epoch,
+                    model_processor=model_processor,
+                    eval_dataloader=eval_dataloader,
+                    config=config,
+                    logger=logger,
+                    local_rank=local_rank,
+                    rank=rank,
+                )
 
     def inference(self, model_processor, data_processor, sample_inputs):
         sample_inputs = data_processor._convert_features(sample_inputs)
@@ -358,29 +366,43 @@ class ModelRunner:
 
 
 if __name__ == "__main__":
+    import argparse
     import warnings
     from transformers.utils import logging as hf_logging
     from huggingface_hub.utils import logging as hf_hub_logging
 
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
     warnings.filterwarnings("ignore")
     hf_logging.set_verbosity_error()
     hf_hub_logging.set_verbosity_error()
 
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    parser = argparse.ArgumentParser(description="runner paraser")
+    parser.add_argument("--mode", type=str, required=True)
+    parser.add_argument("--pkg", type=str, required=True)
+    parser.add_argument("--task", type=str, required=True)
+    parser.add_argument("--use_hf_model", type=bool, required=True)
+    parser.add_argument("--data_dir", type=str, required=True)
+    parser.add_argument("--train_file_name", type=str)
+    parser.add_argument("--eval_file_name", type=str)
+    parser.add_argument("--output_dir", type=str, required=True)
+    parser.add_argument("--enable_fsdp", type=bool, default=False)
+    parser.add_argument("--use_fp16", type=bool, default=False)
+    args = parser.parse_args()
+
+    home_path = os.path.dirname(os.path.realpath(__file__))
     params = {
-        "pkg": "klue",
-        "task": "ynat",
-        "use_hf_model": True,
-        "data_dir": "/home/omnious/workspace/jovis/jovis-model/jovis_model/_db/klue/ynat-v1.1",
-        "train_file_name": "ynat-v1.1_train.json",
-        "eval_file_name": "ynat-v1.1_dev.json",
-        "output_dir": "/home/omnious/workspace/jovis/jovis-model/outputs",
+        "pkg": args.pkg,
+        "task": args.task,
+        "use_hf_model": args.use_hf_model,
+        "data_dir": os.path.join(home_path, args.data_dir),
+        "train_file_name": getattr(args, "train_file_name", None),
+        "eval_file_name": getattr(args, "eval_file_name", None),
+        "output_dir": args.output_dir,
         "params": {
-            "enable_fsdp": False,
-            "use_fp16": True,
-            "mixed_precision": True,
+            "enable_fsdp": args.enable_fsdp,
+            "use_fp16": args.use_fp16,
         },
     }
     config = Config(**params)
-    runner = ModelRunner(config, mode="train")
+    runner = ModelRunner(config, mode=args.mode)
     runner.run()

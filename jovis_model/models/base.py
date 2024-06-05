@@ -1,5 +1,6 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
+import torch
 from transformers import (
     AutoConfig,
     AutoTokenizer,
@@ -57,20 +58,20 @@ class BaseModel:
         else:
             self.model = model_type(self.config)
 
-    def forward(self):
+    def forward(self, **inputs: Dict[str, List[torch.Tensor]]):
         raise NotImplementedError
 
-    def training_step(self):
+    def training_step(self, batch: List[torch.Tensor]):
         raise NotImplementedError
 
-    def validation_step(self):
+    def validation_step(self, batch: List[torch.Tensor]):
         raise NotImplementedError
 
-    def convert_outputs(self):
+    def convert_outputs(self, outputs: Dict[str, torch.Tensor]):
         raise NotImplementedError
 
     def get_metric(self):
         raise NotImplementedError
 
-    def inference(self):
+    def inference(self, sample_inputs: torch.Tensor):
         raise NotImplementedError
