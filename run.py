@@ -1,5 +1,7 @@
 import os
 import random
+import argparse
+import warnings
 
 # import pdb
 from tqdm import tqdm
@@ -54,12 +56,24 @@ class ModelRunner:
                 self.device_id = f"cuda:{torch.cuda.current_device()}"
 
         self.dm: DataModule = self.get_data_module()
+        if self.config.params.enable_fsdp:
+            if self.local_rank == 0:
+                self.logger.info("data module loaded")
+        else:
+            self.logger.info("data module loaded")
+
         self.mm: ModelModule = self.get_model_module()
+        if self.config.params.enable_fsdp:
+            if self.local_rank == 0:
+                self.logger.info("model module loaded")
+        else:
+            self.logger.info("model module loaded")
 
     def get_data_module(self) -> DataModule:
         dm = DataModule(self.config)
         if self.mode == "train":
-            self.config.params.num_labels = len(dm.processor.get_labels())
+            if getattr(dm.processor, "get_labels", None):
+                self.config.params.num_labels = len(dm.processor.get_labels())
             for mode_ in ["train", "eval"]:
                 if getattr(self.config, f"{mode_}_file_name", None):
                     if self.config.params.enable_fsdp:
@@ -249,15 +263,16 @@ class ModelRunner:
 
         autocast = torch.cuda.amp.autocast if config.params.use_fp16 else nullcontext
 
-        self.eval(
-            epoch=0,
-            model_processor=model_processor,
-            eval_dataloader=eval_dataloader,
-            config=config,
-            logger=logger,
-            local_rank=local_rank,
-            rank=rank,
-        )
+        if eval_dataloader:
+            self.eval(
+                epoch=0,
+                model_processor=model_processor,
+                eval_dataloader=eval_dataloader,
+                config=config,
+                logger=logger,
+                local_rank=local_rank,
+                rank=rank,
+            )
         for epoch in range(config.params.num_train_epochs):
             with MemoryTrace() as memtrace:
                 model_processor.model.train()
@@ -366,8 +381,6 @@ class ModelRunner:
 
 
 if __name__ == "__main__":
-    import argparse
-    import warnings
     from transformers.utils import logging as hf_logging
     from huggingface_hub.utils import logging as hf_hub_logging
 
@@ -376,33 +389,28 @@ if __name__ == "__main__":
     hf_logging.set_verbosity_error()
     hf_hub_logging.set_verbosity_error()
 
-    parser = argparse.ArgumentParser(description="runner paraser")
-    parser.add_argument("--mode", type=str, required=True)
-    parser.add_argument("--pkg", type=str, required=True)
-    parser.add_argument("--task", type=str, required=True)
-    parser.add_argument("--use_hf_model", type=bool, required=True)
-    parser.add_argument("--data_dir", type=str, required=True)
-    parser.add_argument("--train_file_name", type=str)
-    parser.add_argument("--eval_file_name", type=str)
-    parser.add_argument("--output_dir", type=str, required=True)
-    parser.add_argument("--enable_fsdp", type=bool, default=False)
-    parser.add_argument("--use_fp16", type=bool, default=False)
-    args = parser.parse_args()
+    parser = argparse.ArgumentParser(
+        description="runner paraser", argument_default=argparse.SUPPRESS
+    )
+    base_fields = Config.model_fields
+    for name, field in base_fields.items():
+        parser.add_argument(
+            f"--{name}", type=field.annotation, required=field.is_required()
+        )
+    config, extra = parser.parse_known_args()
+    config = vars(config)
+    runner_mode = None
+    conv_dict = {"true": True, "false": False}
+    params = {}
+    for k, v in zip(extra[0::2], extra[1::2]):
+        if k[2:] == "mode":
+            runner_mode = v
+        else:
+            if v in list(conv_dict.keys()):
+                v = conv_dict[v]
+            params[k[2:]] = v
+    config["params"] = params
+    config = Config(**config)
 
-    home_path = os.path.dirname(os.path.realpath(__file__))
-    params = {
-        "pkg": args.pkg,
-        "task": args.task,
-        "use_hf_model": args.use_hf_model,
-        "data_dir": os.path.join(home_path, args.data_dir),
-        "train_file_name": getattr(args, "train_file_name", None),
-        "eval_file_name": getattr(args, "eval_file_name", None),
-        "output_dir": args.output_dir,
-        "params": {
-            "enable_fsdp": args.enable_fsdp,
-            "use_fp16": args.use_fp16,
-        },
-    }
-    config = Config(**params)
-    runner = ModelRunner(config, mode=args.mode)
+    runner = ModelRunner(config, mode=runner_mode)
     runner.run()

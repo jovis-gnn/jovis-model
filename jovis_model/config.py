@@ -1,5 +1,3 @@
-from typing import Optional
-
 from pydantic import BaseModel, Field, model_validator
 
 from jovis_model.configs.klue import KLUEConfig
@@ -12,12 +10,12 @@ class Config(BaseModel):
     pkg: str
     task: str
     use_hf_model: bool
-    data_dir: Optional[str] = Field(default=None)
-    output_dir: Optional[str] = Field(default=None)
-    train_file_name: Optional[str] = Field(default=None)
-    eval_file_name: Optional[str] = Field(default=None)
-    test_file_name: Optional[str] = Field(default=None)
-    params: Optional[dict] = Field(default_factory=dict)
+    data_dir: str = Field(default=None)
+    output_dir: str = Field(default=None)
+    train_file_name: str = Field(default=None)
+    eval_file_name: str = Field(default=None)
+    test_file_name: str = Field(default=None)
+    params: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def load_train_config(self):
