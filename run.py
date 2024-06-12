@@ -333,7 +333,7 @@ class ModelRunner:
     def inference(self, model_processor, data_processor, sample_inputs):
         sample_inputs = data_processor._convert_features(sample_inputs)
         if self.config.task != "bedrock":
-            sample_inputs = sample_inputs.to(f"cuda:{self.device_id}")
+            sample_inputs = sample_inputs.to(self.device_id)
         outputs = model_processor.inference(sample_inputs)
 
         return outputs

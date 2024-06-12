@@ -10,3 +10,4 @@ class BedrockConfig(BaseModel, extra=Extra.allow):
     anthropic_version: str = Field(default="bedrock-2023-05-31")
 
     max_new_tokens: int = Field(default=200)
+    seed: int = Field(default=42)

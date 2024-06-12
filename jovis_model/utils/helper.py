@@ -49,6 +49,24 @@ def download_images_from_url(data: List[List[str]], save_path):
     pool.join()
 
 
+def build_faiss_index(
+    embeddings: List[List[float]],
+    save_path: str,
+    save_name: str,
+    pids: List[str] = None,
+):
+    embeddings = np.array(embeddings).astype(np.float32)
+    faiss.normalize_L2(embeddings)
+    faiss_index = faiss.IndexFlatIP(embeddings.shape[1])
+    faiss_index = faiss.IndexIDMap2(faiss_index)
+    faiss_index.add_with_ids(embeddings, np.arange(len(embeddings)))
+    faiss.write_index(faiss_index, os.path.join(save_path, f"{save_name}.index"))
+
+    if pids:
+        with open(os.path.join(save_path, f"{save_name}_map.json"), "w") as f:
+            json.dump({idx: pid for idx, pid in enumerate(pids)}, f)
+
+
 if __name__ == "__main__":
     file_path = "/home/omnious/workspace/jovis/jovis-model/jovis_model/_db/llm/multimodal_test/export_data_skb.json"
     save_path = "/home/omnious/workspace/jovis/jovis-model/jovis_model/_db/llm/multimodal_test/images/export_data_skb"
@@ -58,20 +76,3 @@ if __name__ == "__main__":
     for pid, meta in json_loaded.items():
         data.append([pid, meta["s3_url"]])
     download_images_from_url(data, save_path)
-
-
-def build_faiss_index(
-    embeddings: List[List[float]],
-    save_path: str,
-    save_name: str,
-    pids: List[str] = None,
-):
-    embeddings = np.array(embeddings)
-    faiss_index = faiss.IndexFlatIP(embeddings.shape[1])
-    faiss_index = faiss.IndexIDMap2(faiss_index)
-    faiss_index.add_with_ids(embeddings, np.arange(len(embeddings)))
-    faiss.write_index(faiss_index, os.path.join(save_path, f"{save_name}.index"))
-
-    if pids:
-        with open(os.path.join(save_path, f"{save_name}_map.json"), "w") as f:
-            json.dump({idx: pid for idx, pid in enumerate(pids)}, f)
