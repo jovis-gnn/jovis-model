@@ -21,7 +21,7 @@ from jovis_model.utils.helper import init_logger
 from jovis_model.utils.train_utils import (
     get_policies,
     MemoryTrace,
-    generate_peft_config,
+    generate_lora_config,
 )
 from jovis_model.module import DataModule, ModelModule
 
@@ -120,12 +120,13 @@ class ModelRunner:
             if self.config.params.quantization:
                 mm.processor.model = prepare_model_for_kbit_training(mm.processor.model)
 
-            if self.config.params.use_fp16:
+            if self.config.params.enable_fsdp and self.config.params.use_fp16:
                 mm.processor.model = mm.processor.model.to(torch.bfloat16)
 
             if self.config.params.use_peft:
-                peft_config = generate_peft_config(self.config)
+                peft_config = generate_lora_config()
                 mm.processor.model = get_peft_model(mm.processor.model, peft_config)
+                mm.processor.model.print_trainable_parameters()
 
             if self.config.params.enable_fsdp:
                 mixed_precision_policy, wrapping_policy = get_policies(self.config)
@@ -138,7 +139,10 @@ class ModelRunner:
                     device_id=int(self.device_id.split(":")[-1]),
                     limit_all_gathers=True,
                 )
-            else:
+            elif (
+                not self.config.params.quantization
+                and not self.config.params.enable_fsdp
+            ):
                 mm.processor.model.to(self.device_id)
         return mm
 

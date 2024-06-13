@@ -265,6 +265,26 @@ html5lib = ["html5lib"]
 lxml = ["lxml"]
 
 [[package]]
+name = "bitsandbytes"
+version = "0.43.1"
+description = "k-bit optimizers and matrix multiplication routines."
+category = "main"
+optional = false
+python-versions = "*"
+files = [
+    {file = "bitsandbytes-0.43.1-py3-none-manylinux_2_24_x86_64.whl", hash = "sha256:a81c826d576d6d691c7b4a7491c8fdc0f37f769795d6ca2e54afa605d2c260a3"},
+    {file = "bitsandbytes-0.43.1-py3-none-win_amd64.whl", hash = "sha256:52c1c7189a6ca006555a9663e544e75f40520a97a26e075411f9f9aca0771fcd"},
+]
+
+[package.dependencies]
+numpy = "*"
+torch = "*"
+
+[package.extras]
+benchmark = ["matplotlib", "pandas"]
+test = ["scipy"]
+
+[[package]]
 name = "bleach"
 version = "6.1.0"
 description = "An easy safelist-based HTML-sanitizing tool."
@@ -5567,4 +5587,4 @@ torch = "2.2.1"
 [metadata]
 lock-version = "2.0"
 python-versions = "3.10.10"
-content-hash = "86a1b26d3f0207839fc1e4b5f8c6f4e15276c325ac8d25b41c4dd4a999825d61"
+content-hash = "dd495d7ae40586048dda41cf6c431f0e35d2f7d499cf008157a40dc55f9acf94"

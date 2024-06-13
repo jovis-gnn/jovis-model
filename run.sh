@@ -5,5 +5,7 @@ python run.py \
 --train_file_name alpaca_train.csv \
 --output_dir /home/omnious/workspace/jovis/jovis-model/jovis_model/outputs \
 --hf_name meta-llama/Meta-Llama-3-8B-Instruct \
---train_batch_size 1 \
---use_fp16 true
+--use_peft true \
+--quantization true \
+--use_fp16 false \
+--train_batch_size 1

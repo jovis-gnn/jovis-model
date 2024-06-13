@@ -19,6 +19,7 @@ class ChatModel(BaseModel):
             },
             model_kwargs={
                 "torch_dtype": torch.bfloat16,
+                "load_in_8bit": True if self.config.params.quantization else None,
                 "trust_remote_code": True,
             },
         )

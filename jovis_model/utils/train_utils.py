@@ -10,9 +10,8 @@ from torch.distributed.fsdp import MixedPrecision
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 from transformers.models.roberta.modeling_roberta import RobertaEncoder
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer
-
-
 from accelerate.utils import is_xpu_available
+from peft import LoraConfig
 
 
 fpSixteen = MixedPrecision(
@@ -45,8 +44,18 @@ fp32_policy = MixedPrecision(
 )
 
 
-def generate_peft_config():
-    pass
+def generate_lora_config():
+    lora_config = {
+        "r": 8,
+        "lora_alpha": 32,
+        "target_modules": ["q_proj", "v_proj"],
+        "bias": "none",
+        "task_type": "CAUSAL_LM",
+        "lora_dropout": 0.05,
+        "inference_mode": False,
+    }
+    lora_config = LoraConfig(**lora_config)
+    return lora_config
 
 
 def get_transformer_wrapper(pkg):
