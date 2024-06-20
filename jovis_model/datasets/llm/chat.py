@@ -60,6 +60,7 @@ class ChatProcessor(BaseDataProcessor):
             pad_token_id = self.tokenizer.convert_tokens_to_ids("<|end_of_text|>")
             self.tokenizer.pad_token = "<|end_of_text|>"
             self.tokenizer.pad_token_id = pad_token_id
+
         self.chat_formatter = ChatFormat(self.tokenizer)
 
     def create_examples(self, file_path: str) -> List[DialogToLabel]:

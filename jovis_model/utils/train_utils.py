@@ -77,14 +77,10 @@ def get_policies(config):
 
     mixed_precision_policy = None
     wrapping_policy = None
-
-    if config.params.mixed_precision:
-        bf16_ready = verify_bfloat_support
-
-        if bf16_ready:
-            mixed_precision_policy = bfSixteen
-        elif config.params.use_fp16:
-            mixed_precision_policy = fpSixteen
+    if verify_bfloat_support:
+        mixed_precision_policy = bfSixteen
+    else:
+        mixed_precision_policy = fpSixteen
     wrapping_policy = get_transformer_wrapper(config.pkg)
     return mixed_precision_policy, wrapping_policy
 

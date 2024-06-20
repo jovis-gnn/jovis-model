@@ -9,7 +9,7 @@ class BedrockProcessor(BaseDataProcessor):
         super().__init__(config)
         self.config = config
 
-    def _convert_features(self, dialogs):
+    def convert_features(self, dialogs):
         args = {
             "anthropic_version": self.config.params.anthropic_version,
             "max_tokens": self.config.params.max_new_tokens,

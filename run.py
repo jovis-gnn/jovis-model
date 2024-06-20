@@ -120,15 +120,13 @@ class ModelRunner:
             if self.config.params.quantization:
                 mm.processor.model = prepare_model_for_kbit_training(mm.processor.model)
 
-            if self.config.params.enable_fsdp and self.config.params.use_fp16:
-                mm.processor.model = mm.processor.model.to(torch.bfloat16)
-
             if self.config.params.use_peft:
                 peft_config = generate_lora_config()
                 mm.processor.model = get_peft_model(mm.processor.model, peft_config)
                 mm.processor.model.print_trainable_parameters()
 
             if self.config.params.enable_fsdp:
+                mm.processor.model = mm.processor.model.to(torch.bfloat16)
                 mixed_precision_policy, wrapping_policy = get_policies(self.config)
                 mm.processor.model = FSDP(
                     mm.processor.model,
@@ -350,7 +348,7 @@ class ModelRunner:
                 )
 
     def inference(self, model_processor, data_processor, sample_inputs):
-        sample_inputs = data_processor._convert_features(sample_inputs)
+        sample_inputs = data_processor.convert_features(sample_inputs)
         if self.config.task != "bedrock":
             sample_inputs = sample_inputs.to(self.device_id)
         outputs = model_processor.inference(sample_inputs)
