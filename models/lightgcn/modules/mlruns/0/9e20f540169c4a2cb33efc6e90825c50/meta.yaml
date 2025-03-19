@@ -1,0 +1,15 @@
+artifact_uri: file:///home/omnious/workspace/jovis/prcmd-model/models/lightgcn/modules/mlruns/0/9e20f540169c4a2cb33efc6e90825c50/artifacts
+end_time: 1701783814440
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 9e20f540169c4a2cb33efc6e90825c50
+run_name: test
+run_uuid: 9e20f540169c4a2cb33efc6e90825c50
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1701783812512
+status: 4
+tags: []
+user_id: omnious

@@ -1,0 +1,15 @@
+{
+    "company_id": "01HZZT74A7XKQP9G69CHQH69HK",
+    "etl_id": "test",
+    "model_id": "test",
+    "etl_version": 8,
+    "etl_s3_bucket_name": "prcmd-offline-store-prod",
+    "model_s3_bucket_name": "prcmd-candidate-model-prod",
+    "objective": "lambdarank",
+    "num_leaves": 31,
+    "num_iterations": 200,
+    "metric": "map",
+    "boosting_type": "gbdt",
+    "verbosity": 2,
+    "early_stopping_round": 10
+}

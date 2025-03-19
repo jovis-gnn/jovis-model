@@ -1,0 +1,7 @@
+{
+    "mode": "create_embeddings",
+    "model_data_dir": "../data",
+    "source_data_file": "/data/shared/prcmd/total.csv",
+    "batch_size": 32,
+    "use_pooler_output": true
+}

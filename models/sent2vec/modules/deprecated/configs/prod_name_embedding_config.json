@@ -1,0 +1,12 @@
+{
+    "mode": "embedding",
+    "model_data_dir": "data",
+    "k": 10,
+    "batch_size": 32,
+    "use_pooler_output": true,
+    "item2fine_ctgr_file": "item2category_20230306_entity2label.json",
+    "fine_ctgr2prodname_file": "fine_ctgr2prodname.json",
+    "prodname2emb_file": "prodname2embeddings_{}.pickle",
+    "prodname2prodid_file": "product_name2product_id.json",
+    "model_ckpt_dir": "model"
+}

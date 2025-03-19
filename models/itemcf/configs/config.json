@@ -1,0 +1,13 @@
+{
+    "company_id": "01H2YP5B7M6R22A2ZEAACQQQRQ",
+    "etl_id": "01HF90H0DTMA3ZQKC4C17P32D1",
+    "etl_version": 1,
+    "etl_s3_bucket_name": "prcmd-offline-store-dev",
+    "model_s3_bucket_name": "prcmd-candidate-model-dev",
+    "dataset_checkpoint": "4week",
+    "model_id": "test_itemcf",
+    "top_k": 12,
+    "remote_server_uri": "https://mlflow.labs.omnious.com",
+    "experiment_name": "prcmd_itemcf",
+    "run_name": "바바더닷컴_itemcf_dev"
+}

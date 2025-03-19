@@ -1,0 +1,23 @@
+{
+  "company_id": "01H2YP5B7M6R22A2ZEAACQQQRQ",
+  "etl_id": "01HMVEW920VP9G1WNBJ4F98HT3",
+  "etl_version": 4,
+  "etl_s3_bucket_name": "prcmd-offline-store-dev",
+  "model_s3_bucket_name": "prcmd-candidate-model-dev",
+  "dataset_checkpoint": "4weeks",
+  "model_id": "test",
+  "use_pooler_output": true,
+  "batch_size_test": 8,
+  "device_num": 0,
+  "use_gpu": true,
+  "remote_server_uri": "https://mlflow.labs.omnious.com",
+  "experiment_name": "[PRCMD]sent2vec",
+  "run_name": "바바더닷컴_sent2vec_dev",
+  "memo": "Base",
+  "model_name_or_path": "data/model",
+  "optimizer": "AdamW",
+  "lr_scheduler": "linear",
+  "lr": 3e-05,
+  "num_epochs": 3,
+  "weight_decay": 0.0
+}
